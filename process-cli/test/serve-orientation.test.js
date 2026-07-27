@@ -15,12 +15,9 @@ import { createImageServer } from "../server.js";
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
-// Port mapping for each format to avoid conflicts
-const PORT_MAP = {
-  jpg: 9000,
-  png: 9001,
-  bmp: 9002,
-};
+// Each suite listens on an ephemeral port (0) and reads back the assigned one,
+// so a real `--serve` running on a fixed port cannot collide with the tests.
+const EPHEMERAL_PORT = 0;
 
 async function getImageDimensions(buffer) {
   const img = await loadImage(buffer);
@@ -48,18 +45,19 @@ describe.each(["jpg", "png", "bmp"])(
   "Image serving tests - %s format",
   (format) => {
     let server;
-    const port = PORT_MAP[format];
+    let port;
 
     beforeAll(async () => {
       const albumDir = path.join(__dirname, "test-albums");
       server = await createImageServer(
         albumDir,
-        port,
+        EPHEMERAL_PORT,
         format,
         null, // devicePalette
         null, // deviceSettings
         { silent: true },
       );
+      port = server.address().port;
     }, 30000);
 
     afterAll(async () => {
