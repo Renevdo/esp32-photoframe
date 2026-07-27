@@ -112,7 +112,7 @@ test("album enabled toggle and album delete", async () => {
     body: JSON.stringify({ name: "Toggle" }),
   });
   let res = await fetch(`${base}/api/albums/enabled?name=Toggle`, {
-    method: "POST",
+    method: "PUT",
     headers: { "content-type": "application/json" },
     body: JSON.stringify({ enabled: false }),
   });

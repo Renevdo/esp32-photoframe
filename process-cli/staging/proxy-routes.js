@@ -6,7 +6,7 @@
 
 import fs from "fs";
 import path from "path";
-import { collectBody, json, parseJsonBody } from "./http-util.js";
+import { collectBody, json, parseJsonBody, sendFile } from "./http-util.js";
 import { parseMultipart } from "./multipart.js";
 import { isSafeName } from "./ops.js";
 
@@ -104,8 +104,11 @@ export async function proxyRoute(req, res, u, seg, opts) {
     return true;
   }
 
-  // POST /api/albums/enabled?name= {enabled}
-  if (route === "api/albums/enabled" && req.method === "POST") {
+  // PUT /api/albums/enabled?name= {enabled}
+  // Note: enabled state applies to the virtual frame only; the deploy-on-wake
+  // sync intentionally carries album content, not metadata (see
+  // docs/OFFLINE_ALBUM_SYNC.md).
+  if (route === "api/albums/enabled" && req.method === "PUT") {
     const name = u.searchParams.get("name");
     const body = parseJsonBody(await collectBody(req, 4096));
     if (!isSafeName(name) || typeof body.enabled !== "boolean") {
@@ -200,23 +203,17 @@ export async function proxyRoute(req, res, u, seg, opts) {
       return true;
     }
     const p = path.join(store.albumsDir, pair.album, pair.file);
-    if (!fs.existsSync(p)) {
-      json(res, 404, { error: "Image not found" });
-      return true;
-    }
     const types = {
       ".jpg": "image/jpeg",
       ".png": "image/png",
       ".bmp": "image/bmp",
     };
-    const data = fs.readFileSync(p);
-    res.writeHead(200, {
-      "content-type":
-        types[path.extname(pair.file).toLowerCase()] ||
+    sendFile(
+      res,
+      p,
+      types[path.extname(pair.file).toLowerCase()] ||
         "application/octet-stream",
-      "content-length": data.length,
-    });
-    res.end(data);
+    );
     return true;
   }
 
