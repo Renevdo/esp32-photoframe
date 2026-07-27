@@ -117,6 +117,16 @@ test("client errors map to 4xx, not 500", async () => {
     body: "data",
   });
   expect(res.status).toBe(400);
+
+  // malformed percent-encoding in the path
+  res = await fetch(`${base}/api/sync/file/a/%E0%A4%A`);
+  expect(res.status).toBe(400);
+
+  // non-integer since values
+  for (const since of ["12abc", "-1", "1.5"]) {
+    res = await fetch(`${base}/api/sync/changes?since=${since}&device=T`);
+    expect(res.status).toBe(400);
+  }
 });
 
 test("albums list and photo delete", async () => {

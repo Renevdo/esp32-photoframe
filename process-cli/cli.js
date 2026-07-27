@@ -874,8 +874,12 @@ program
       const { createStagingServer } =
         await import("./staging/staging-server.js");
 
-      const port = parseInt(options.stagingPort);
-      if (isNaN(port) || port < 1 || port > 65535) {
+      if (!/^\d+$/.test(options.stagingPort)) {
+        console.error(`Error: Invalid port number: ${options.stagingPort}`);
+        process.exit(1);
+      }
+      const port = Number(options.stagingPort);
+      if (port < 1 || port > 65535) {
         console.error(`Error: Invalid port number: ${options.stagingPort}`);
         process.exit(1);
       }

@@ -68,6 +68,16 @@ test("changesSince past the head signals reset", () => {
   expect(s.changesSince(7)).toEqual({ reset: true });
 });
 
+test("corrupt state.json is backed up and reset instead of crashing", () => {
+  const s = new StagingStore(dir);
+  s.init();
+  fs.writeFileSync(s.statePath, "{ truncated");
+  const s2 = new StagingStore(dir);
+  s2.init();
+  expect(s2.latestSeq).toBe(0);
+  expect(fs.existsSync(`${s.statePath}.corrupt`)).toBe(true);
+});
+
 test("ack records per-device seq", () => {
   const s = new StagingStore(dir);
   s.init();

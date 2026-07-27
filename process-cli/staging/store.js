@@ -24,7 +24,19 @@ export class StagingStore {
     fs.mkdirSync(this.albumsDir, { recursive: true });
     fs.mkdirSync(this.originalsDir, { recursive: true });
     if (fs.existsSync(this.statePath)) {
-      this.state = JSON.parse(fs.readFileSync(this.statePath, "utf8"));
+      try {
+        this.state = JSON.parse(fs.readFileSync(this.statePath, "utf8"));
+      } catch {
+        // Corrupt state (interrupted write, manual edit): keep the evidence
+        // and restart from an empty journal. Devices whose acked seq is now
+        // ahead get a reset response and do a full resync.
+        const backup = `${this.statePath}.corrupt`;
+        fs.copyFileSync(this.statePath, backup);
+        console.error(
+          `Warning: ${this.statePath} is corrupt, starting fresh (backup at ${backup})`,
+        );
+        this.saveState();
+      }
     } else {
       this.saveState();
     }

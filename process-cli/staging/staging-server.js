@@ -91,7 +91,14 @@ export function createStagingServer(store, ctx, options = {}) {
   const server = http.createServer(async (req, res) => {
     try {
       const u = new URL(req.url, "http://localhost");
-      const seg = u.pathname.split("/").filter(Boolean).map(decodeURIComponent);
+      let seg;
+      try {
+        seg = u.pathname.split("/").filter(Boolean).map(decodeURIComponent);
+      } catch {
+        const err = new Error("malformed percent-encoding in path");
+        err.statusCode = 400;
+        throw err;
+      }
       await route(req, res, u, seg);
     } catch (err) {
       if (!res.headersSent) {
@@ -113,8 +120,13 @@ export function createStagingServer(store, ctx, options = {}) {
     // ---- Device-facing sync API ----
 
     if (req.method === "GET" && seg.join("/") === "api/sync/changes") {
-      const since = parseInt(u.searchParams.get("since") || "0", 10);
-      const result = store.changesSince(Number.isFinite(since) ? since : 0);
+      const sinceRaw = u.searchParams.get("since") ?? "0";
+      if (!/^\d+$/.test(sinceRaw)) {
+        return json(res, 400, {
+          error: "since must be a non-negative integer",
+        });
+      }
+      const result = store.changesSince(Number(sinceRaw));
       if (result.reset) return json(res, 409, { reset: true });
       return json(res, 200, { latest_seq: result.latestSeq, ops: result.ops });
     }
