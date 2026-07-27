@@ -6,7 +6,8 @@ extern "C" {
 #include "sync_ops.h"
 }
 
-TEST(SyncName, RejectsTraversalAndEmpty) {
+TEST(SyncName, RejectsTraversalAndEmpty)
+{
     EXPECT_FALSE(sync_name_is_safe(""));
     EXPECT_FALSE(sync_name_is_safe(".."));
     EXPECT_FALSE(sync_name_is_safe("."));
@@ -18,7 +19,8 @@ TEST(SyncName, RejectsTraversalAndEmpty) {
     EXPECT_TRUE(sync_name_is_safe("pic.epdgz"));
 }
 
-TEST(SyncOpsParse, ParsesChangesResponse) {
+TEST(SyncOpsParse, ParsesChangesResponse)
+{
     const char *json =
         "{\"latest_seq\": 3, \"ops\": ["
         "{\"op\":\"put\",\"album\":\"fam\",\"file\":\"a.epdgz\",\"size\":123},"
@@ -39,26 +41,30 @@ TEST(SyncOpsParse, ParsesChangesResponse) {
     EXPECT_STREQ(out.ops[2].album, "old");
 }
 
-TEST(SyncOpsParse, ParsesResetFlag) {
+TEST(SyncOpsParse, ParsesResetFlag)
+{
     sync_changes_t out;
     ASSERT_TRUE(sync_ops_parse("{\"reset\": true}", &out));
     EXPECT_TRUE(out.reset);
 }
 
-TEST(SyncOpsParse, ParsesEmptyOps) {
+TEST(SyncOpsParse, ParsesEmptyOps)
+{
     sync_changes_t out;
     ASSERT_TRUE(sync_ops_parse("{\"latest_seq\": 5, \"ops\": []}", &out));
     EXPECT_EQ(out.latest_seq, 5);
     EXPECT_EQ(out.op_count, 0);
 }
 
-TEST(SyncOpsParse, RejectsBadInput) {
+TEST(SyncOpsParse, RejectsBadInput)
+{
     sync_changes_t out;
     EXPECT_FALSE(sync_ops_parse("not json", &out));
     EXPECT_FALSE(sync_ops_parse("{\"latest_seq\":1,\"ops\":[{\"op\":\"chmod\"}]}", &out));
-    EXPECT_FALSE(sync_ops_parse(
-        "{\"latest_seq\":1,\"ops\":[{\"op\":\"put\",\"album\":\"../x\",\"file\":\"f\",\"size\":1}]}",
-        &out));
+    EXPECT_FALSE(
+        sync_ops_parse("{\"latest_seq\":1,\"ops\":[{\"op\":\"put\",\"album\":\"../"
+                       "x\",\"file\":\"f\",\"size\":1}]}",
+                       &out));
     EXPECT_FALSE(sync_ops_parse("{\"ops\": []}", &out));  // missing latest_seq
     EXPECT_FALSE(sync_ops_parse(
         "{\"latest_seq\":1,\"ops\":[{\"op\":\"put\",\"album\":\"a\",\"file\":\"f\"}]}",
