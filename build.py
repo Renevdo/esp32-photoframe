@@ -19,15 +19,17 @@ def build_webapp():
     print("\n=== Building webapp ===")
     root = os.path.dirname(os.path.abspath(__file__))
     try:
-        # Single install for the whole workspace (webapp + process-cli). A
-        # native dependency's prebuilt binary download can fail transiently in
-        # CI and fall into a compile that the runner can't do; one retry
+        # One install for the whole workspace (webapp + process-cli). npm ci so
+        # the committed lockfile is authoritative, and only when the tree is
+        # missing so repeat local builds stay fast. A native dependency's
+        # prebuilt binary download can fail transiently in CI; one retry
         # fetches it.
-        try:
-            subprocess.run("npm install", shell=True, check=True, cwd=root)
-        except subprocess.CalledProcessError:
-            print("  npm install failed, retrying once...", flush=True)
-            subprocess.run("npm install", shell=True, check=True, cwd=root)
+        if not os.path.isdir(os.path.join(root, "node_modules")):
+            try:
+                subprocess.run("npm ci", shell=True, check=True, cwd=root)
+            except subprocess.CalledProcessError:
+                print("  npm ci failed, retrying once...", flush=True)
+                subprocess.run("npm ci", shell=True, check=True, cwd=root)
         subprocess.run(
             "npm run build --workspace=webapp", shell=True, check=True, cwd=root
         )
