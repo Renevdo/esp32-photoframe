@@ -196,9 +196,8 @@ jobs:
 
     - name: Build demo webapp
       run: |
-        cd webapp
         npm ci
-        npm run build:demo
+        npm run build:demo --workspace=webapp
 
     - name: Copy firmware and generate manifests
       run: |
