@@ -70,3 +70,27 @@ TEST(SyncOpsParse, RejectsBadInput)
         "{\"latest_seq\":1,\"ops\":[{\"op\":\"put\",\"album\":\"a\",\"file\":\"f\"}]}",
         &out));  // put without size
 }
+
+TEST(SyncOpsParse, RejectsNonIntegerOrOutOfRangeNumbers)
+{
+    sync_changes_t out;
+    // latest_seq must be an exact non-negative integer within double precision
+    EXPECT_FALSE(sync_ops_parse("{\"latest_seq\": -1, \"ops\": []}", &out));
+    EXPECT_FALSE(sync_ops_parse("{\"latest_seq\": 1.5, \"ops\": []}", &out));
+    EXPECT_FALSE(sync_ops_parse("{\"latest_seq\": 1e20, \"ops\": []}", &out));
+    // put size must fit int32
+    EXPECT_FALSE(
+        sync_ops_parse("{\"latest_seq\":1,\"ops\":[{\"op\":\"put\",\"album\":\"a\",\"file\":\"f\","
+                       "\"size\":2147483648}]}",
+                       &out));  // INT32_MAX + 1
+    EXPECT_FALSE(
+        sync_ops_parse("{\"latest_seq\":1,\"ops\":[{\"op\":\"put\",\"album\":\"a\",\"file\":\"f\","
+                       "\"size\":1.5}]}",
+                       &out));
+    // boundary value is accepted
+    EXPECT_TRUE(
+        sync_ops_parse("{\"latest_seq\":1,\"ops\":[{\"op\":\"put\",\"album\":\"a\",\"file\":\"f\","
+                       "\"size\":2147483647}]}",
+                       &out));
+    EXPECT_EQ(out.ops[0].size, 2147483647);
+}

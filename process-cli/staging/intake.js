@@ -11,9 +11,16 @@ import { createEPDGZ, generateThumbnail } from "@aitjcize/epaper-image-convert";
 import { processImagePipeline } from "../utils.js";
 import { isSafeName } from "./ops.js";
 
+// Client sent an invalid name: an HTTP 400, not a server error.
+function unsafeNameError(what) {
+  const err = new Error(`unsafe ${what}`);
+  err.statusCode = 400;
+  return err;
+}
+
 export async function addPhoto(store, album, filename, buffer, ctx) {
   if (!isSafeName(album) || !isSafeName(filename)) {
-    throw new Error("unsafe album or file name");
+    throw unsafeNameError("album or file name");
   }
   const ext = path.extname(filename);
   const base = path.basename(filename, ext);
@@ -52,7 +59,7 @@ export async function addPhoto(store, album, filename, buffer, ctx) {
 
 export function removePhoto(store, album, base) {
   if (!isSafeName(album) || !isSafeName(base)) {
-    throw new Error("unsafe album or file name");
+    throw unsafeNameError("album or file name");
   }
   for (const f of [`${base}.epdgz`, `${base}.jpg`]) {
     fs.rmSync(path.join(store.albumsDir, album, f), { force: true });
@@ -69,7 +76,7 @@ export function removePhoto(store, album, base) {
 
 export function removeAlbum(store, album) {
   if (!isSafeName(album)) {
-    throw new Error("unsafe album name");
+    throw unsafeNameError("album name");
   }
   fs.rmSync(path.join(store.albumsDir, album), {
     recursive: true,

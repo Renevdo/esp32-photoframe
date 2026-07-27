@@ -9,6 +9,7 @@
 #include "album_manager.h"
 #include "config.h"
 #include "config_manager.h"
+#include "esp_heap_caps.h"
 #include "esp_http_client.h"
 #include "esp_log.h"
 #include "esp_timer.h"
@@ -26,6 +27,24 @@ static const char *TAG = "sync_client";
 bool sync_client_is_configured(void)
 {
     return config_manager_get_sync_server_url()[0] != '\0';
+}
+
+// Prefer PSRAM for the transient sync buffers so internal RAM stays free for
+// image decode/display work; fall back to the default heap without PSRAM.
+static void *sync_malloc(size_t size)
+{
+    void *p = heap_caps_malloc(size, MALLOC_CAP_SPIRAM);
+    return p ? p : malloc(size);
+}
+
+// Sync reports its problems through the shared last_fetch_error field; clear
+// it after a successful sync, but only if the current message is ours, so an
+// unrelated rotation error is not wiped.
+static void clear_sync_error(void)
+{
+    if (strncmp(utils_get_last_fetch_error(), "Album sync", 10) == 0) {
+        utils_set_last_fetch_error(NULL);
+    }
 }
 
 static int64_t load_last_seq(void)
@@ -268,7 +287,7 @@ esp_err_t sync_client_run(void)
     snprintf(url, sizeof(url), "%s/api/sync/changes?since=%lld&device=%s", base_url,
              (long long) last_seq, get_device_id());
 
-    char *buf = malloc(SYNC_CHANGES_MAX_LEN);
+    char *buf = sync_malloc(SYNC_CHANGES_MAX_LEN);
     if (!buf) {
         return ESP_ERR_NO_MEM;
     }
@@ -279,7 +298,7 @@ esp_err_t sync_client_run(void)
         return ESP_FAIL;
     }
 
-    sync_changes_t *changes = malloc(sizeof(sync_changes_t));
+    sync_changes_t *changes = sync_malloc(sizeof(sync_changes_t));
     if (!changes) {
         free(buf);
         return ESP_ERR_NO_MEM;
@@ -307,6 +326,7 @@ esp_err_t sync_client_run(void)
         if (changes->latest_seq != last_seq) {
             store_last_seq(changes->latest_seq);
         }
+        clear_sync_error();
         result = ESP_OK;
         goto done;
     }
@@ -331,6 +351,7 @@ esp_err_t sync_client_run(void)
     if (post_ack(base_url, changes->latest_seq) == ESP_OK) {
         store_last_seq(changes->latest_seq);
         ESP_LOGI(TAG, "Sync complete at seq %lld", (long long) changes->latest_seq);
+        clear_sync_error();
         result = ESP_OK;
     } else {
         ESP_LOGW(TAG, "Ack failed; ops applied, will re-verify next wake");
