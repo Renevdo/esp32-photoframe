@@ -207,13 +207,13 @@ jobs:
         # Copy static assets for the demo landing page
         cp .img/sample.jpg demo/
         cp .img/taipei101.jpg demo/
-        cp .img/stock_algorithm.bmp demo/
+        cp .img/stock_algorithm.png demo/
         cp .img/our_algorithm.png demo/
         cp .img/feature_graphic.png demo/
         cp webapp/public/icon.svg demo/
 
         # Generate the dithered hero preview from taipei101.jpg
-        node webapp/node_modules/@aitjcize/epaper-image-convert/src/cli.js \
+        npx epaper-image-convert \
           -d 800x480 -f png -p balanced \
           --orientation landscape --scale-mode cover \
           --use-perceived-output --dither-algorithm stucki \
