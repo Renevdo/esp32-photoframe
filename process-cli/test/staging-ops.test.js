@@ -70,8 +70,7 @@ describe("isSafeName", () => {
   test.each(["ok.epdgz", "My Album", "a-b_c.jpg"])("accepts %s", (n) =>
     expect(isSafeName(n)).toBe(true),
   );
-  test.each(["", "..", "a/b", "a\\b", ".", "x".repeat(64)])(
-    "rejects %j",
-    (n) => expect(isSafeName(n)).toBe(false),
+  test.each(["", "..", "a/b", "a\\b", ".", "x".repeat(64)])("rejects %j", (n) =>
+    expect(isSafeName(n)).toBe(false),
   );
 });
