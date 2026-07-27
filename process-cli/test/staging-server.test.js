@@ -2,6 +2,7 @@ import { jest } from "@jest/globals";
 import fs from "fs";
 import os from "os";
 import path from "path";
+import fetch from "node-fetch";
 import { createCanvas } from "canvas";
 import { getDefaultParams } from "@aitjcize/epaper-image-convert";
 import { StagingStore } from "../staging/store.js";
@@ -25,8 +26,8 @@ beforeEach(async () => {
   server = await createStagingServer(store, ctx, { port: 0, silent: true });
   base = `http://127.0.0.1:${server.address().port}`;
 });
-afterEach(() => {
-  server.close();
+afterEach(async () => {
+  await new Promise((resolve) => server.close(resolve));
   fs.rmSync(dir, { recursive: true, force: true });
 });
 

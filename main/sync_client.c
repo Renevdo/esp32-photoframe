@@ -1,5 +1,6 @@
 #include "sync_client.h"
 
+#include <errno.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -144,9 +145,14 @@ static esp_err_t download_to_file(const char *url, const char *path)
     }
     fclose(f);
 
-    if (err == ESP_OK && rename(tmp_path, path) != 0) {
-        ESP_LOGE(TAG, "Rename %s -> %s failed", tmp_path, path);
-        err = ESP_FAIL;
+    if (err == ESP_OK) {
+        // FATFS rename does not overwrite; remove any previous version first
+        // (same pattern as the upload handlers in http_server.c).
+        unlink(path);
+        if (rename(tmp_path, path) != 0) {
+            ESP_LOGE(TAG, "Rename %s -> %s failed (errno %d)", tmp_path, path, errno);
+            err = ESP_FAIL;
+        }
     }
     if (err != ESP_OK) {
         unlink(tmp_path);
@@ -232,7 +238,14 @@ static esp_err_t apply_op(const char *base_url, const sync_op_t *op)
         char file_path[SYNC_FILE_PATH_LEN];
         snprintf(file_path, sizeof(file_path), "%s/%s", album_path, op->file);
         if (unlink(file_path) != 0) {
-            ESP_LOGW(TAG, "Delete %s: already gone", file_path);
+            if (errno == ENOENT) {
+                ESP_LOGW(TAG, "Delete %s: already gone", file_path);
+            } else {
+                // Real IO error: fail the op so this wake does not ack a
+                // state the SD card does not actually have.
+                ESP_LOGE(TAG, "Delete %s failed (errno %d)", file_path, errno);
+                return ESP_FAIL;
+            }
         }
         return ESP_OK;
     }
