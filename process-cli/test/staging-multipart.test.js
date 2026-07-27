@@ -30,10 +30,7 @@ test("parses image + thumbnail parts with binary bytes intact", () => {
       data: Buffer.from("jpegdata"),
     },
   ]);
-  const parts = parseMultipart(
-    body,
-    "multipart/form-data; boundary=XBOUND",
-  );
+  const parts = parseMultipart(body, "multipart/form-data; boundary=XBOUND");
   expect(parts).toHaveLength(2);
   expect(parts[0].name).toBe("image");
   expect(parts[0].filename).toBe("pic.epdgz");
