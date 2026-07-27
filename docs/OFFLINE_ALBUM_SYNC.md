@@ -72,6 +72,29 @@ button presses on the device, no need to catch it awake.
   did not. This costs a few seconds of WiFi per wake, comparable to URL
   rotation mode.
 
+## Companion app (virtual frame)
+
+The staging server also impersonates a photo frame for the
+[mobile companion app](https://github.com/aitjcize/esp32-photoframe-app):
+it advertises `_esp32-pframe._tcp` via mDNS under its own name (default
+"PhotoFrame Staging", change with `--staging-name`), so the app lists it as
+a second frame that is always reachable. Albums and photos managed through
+the app land in the staging store and reach the real frame on its next wake.
+
+- **Auto-deploy**: edits made through the app deploy immediately by default
+  so no visit to the staging UI is needed. Disable with
+  `--no-staging-auto-deploy` to batch app edits behind an explicit Deploy.
+- **Discovery**: phone and staging server must be on the same LAN, and the
+  app must honor the advertised service port (the virtual frame does not run
+  on port 80 unless you pass `--staging-port 80`, which needs elevated
+  privileges). Disable advertising with `--no-staging-mdns`.
+- **Settings**: settings changed on the virtual frame apply to the virtual
+  frame only in this version; change real device settings through the device
+  web UI or Home Assistant.
+- **Identity**: the virtual frame reports cached real-device values (board,
+  resolution, firmware version) when `--device-parameters` has succeeded at
+  least once, a synthetic `VIRTUAL...` device id, and a full battery.
+
 ## Troubleshooting
 
 - The device settings page shows the last sync problem under the same
