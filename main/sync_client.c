@@ -101,8 +101,9 @@ static int http_get_to_buffer(const char *url, char *buf, size_t buf_len)
 // Max on-SD path for a synced file: album path + '/' + validated file name.
 #define SYNC_FILE_PATH_LEN (256 + SYNC_NAME_MAX_LEN + 2)
 
-// Download url to path atomically (temp file + rename).
-static esp_err_t download_to_file(const char *url, const char *path)
+// Download url to path atomically (temp file + rename). expected_size is the
+// size the server advertised for this op; a negative value skips the check.
+static esp_err_t download_to_file(const char *url, const char *path, int32_t expected_size)
 {
     char tmp_path[SYNC_FILE_PATH_LEN + 8];
     snprintf(tmp_path, sizeof(tmp_path), "%s.tmp", path);
@@ -119,6 +120,7 @@ static esp_err_t download_to_file(const char *url, const char *path)
     };
     esp_http_client_handle_t client = esp_http_client_init(&config);
     esp_err_t err = ESP_FAIL;
+    long written = 0;
     if (client && esp_http_client_open(client, 0) == ESP_OK) {
         esp_http_client_fetch_headers(client);
         int status = esp_http_client_get_status_code(client);
@@ -132,6 +134,7 @@ static esp_err_t download_to_file(const char *url, const char *path)
                     err = ESP_FAIL;
                     break;
                 }
+                written += r;
             }
             if (r < 0) {
                 err = ESP_FAIL;
@@ -144,6 +147,15 @@ static esp_err_t download_to_file(const char *url, const char *path)
         esp_http_client_cleanup(client);
     }
     fclose(f);
+
+    // A connection dropped mid-transfer ends the read loop with 0, which is
+    // indistinguishable from a clean finish. Without this the truncated file
+    // would be renamed into place and acked, making the corruption permanent.
+    if (err == ESP_OK && expected_size >= 0 && written != (long) expected_size) {
+        ESP_LOGE(TAG, "Truncated download %s: %ld of %ld bytes", url, written,
+                 (long) expected_size);
+        err = ESP_FAIL;
+    }
 
     if (err == ESP_OK) {
         // FATFS rename does not overwrite; remove any previous version first
@@ -215,7 +227,7 @@ static esp_err_t apply_put(const char *base_url, const sync_op_t *op)
     char url[SYNC_SERVER_URL_MAX_LEN + sizeof(enc_album) + sizeof(enc_file) + 32];
     snprintf(url, sizeof(url), "%s/api/sync/file/%s/%s", base_url, enc_album, enc_file);
 
-    esp_err_t err = download_to_file(url, file_path);
+    esp_err_t err = download_to_file(url, file_path, op->size);
     if (err == ESP_OK) {
         ESP_LOGI(TAG, "Synced %s/%s (%ld bytes)", op->album, op->file, (long) op->size);
         if (album_created) {
