@@ -871,9 +871,8 @@ program
     // to be awake to start the server.
     if (options.staging) {
       const { StagingStore } = await import("./staging/store.js");
-      const { createStagingServer } = await import(
-        "./staging/staging-server.js"
-      );
+      const { createStagingServer } =
+        await import("./staging/staging-server.js");
 
       const port = parseInt(options.stagingPort);
       if (isNaN(port) || port < 1 || port > 65535) {
@@ -920,7 +919,9 @@ program
 
       await createStagingServer(store, ctx, { port });
       console.log(`Staging store: ${store.storeDir}`);
-      console.log(`Target display: ${ctx.width}x${ctx.height} (${ctx.orientation})`);
+      console.log(
+        `Target display: ${ctx.width}x${ctx.height} (${ctx.orientation})`,
+      );
       console.log("Press Ctrl+C to stop");
       return; // Server runs indefinitely
     }

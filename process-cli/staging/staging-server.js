@@ -69,10 +69,7 @@ export function createStagingServer(store, ctx, options = {}) {
   const server = http.createServer(async (req, res) => {
     try {
       const u = new URL(req.url, "http://localhost");
-      const seg = u.pathname
-        .split("/")
-        .filter(Boolean)
-        .map(decodeURIComponent);
+      const seg = u.pathname.split("/").filter(Boolean).map(decodeURIComponent);
       await route(req, res, u, seg);
     } catch (err) {
       json(res, err.statusCode || 500, { error: err.message });
