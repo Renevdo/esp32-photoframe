@@ -25,6 +25,7 @@ typedef enum { IP_MODE_DHCP = 0, IP_MODE_STATIC = 1 } ip_mode_t;
 #define WIFI_SSID_MAX_LEN 32
 #define WIFI_PASS_MAX_LEN 64
 #define IMAGE_URL_MAX_LEN 256
+#define SYNC_SERVER_URL_MAX_LEN 256
 #define HA_URL_MAX_LEN 256
 #define ROTATION_MODE_MAX_LEN 16
 #define TIMEZONE_MAX_LEN 64
@@ -140,6 +141,10 @@ typedef enum { IP_MODE_DHCP = 0, IP_MODE_STATIC = 1 } ip_mode_t;
 #define NVS_SAVE_DOWNLOADED_KEY "save_dl"
 #define NVS_IMAGE_ETAG_KEY "image_etag"
 #define NVS_LAST_FETCH_ERROR_KEY "last_fetch_err"
+
+// Offline Album Sync
+#define NVS_SYNC_SERVER_URL_KEY "sync_srv_url"
+#define SYNC_WAKE_BUDGET_SEC 120  // max time per wake spent applying sync ops
 
 // Power
 #define NVS_DEEP_SLEEP_KEY "deep_sleep"

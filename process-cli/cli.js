@@ -740,8 +740,8 @@ program
   .description("ESP32 PhotoFrame image processing CLI")
   .version("1.0.0")
   .argument(
-    "<input>",
-    "Input image file or directory with album subdirectories",
+    "[input]",
+    "Input image file or directory with album subdirectories (not needed for --staging)",
   )
   .option("-o, --output-dir <dir>", "Output directory", ".")
   .option(
@@ -778,6 +778,11 @@ program
     "Image format to serve: epdgz, png, jpg, or bmp",
     "epdgz",
   )
+  .option(
+    "--staging <dir>",
+    "Start staging server for offline album preparation (deploy-on-wake sync)",
+  )
+  .option("--staging-port <port>", "Port for staging server", "8090")
   .option(
     "--host <host>",
     "Device hostname or IP address (default: photoframe.local)",
@@ -860,6 +865,81 @@ program
   .action(async (input, options) => {
     let outputDir;
     let useTmpDir = false;
+
+    // Staging mode: long-running local server for offline album preparation.
+    // Device parameters are cached in the store so the device does not need
+    // to be awake to start the server.
+    if (options.staging) {
+      const { StagingStore } = await import("./staging/store.js");
+      const { createStagingServer } =
+        await import("./staging/staging-server.js");
+
+      if (!/^\d+$/.test(options.stagingPort)) {
+        console.error(`Error: Invalid port number: ${options.stagingPort}`);
+        process.exit(1);
+      }
+      const port = Number(options.stagingPort);
+      if (port < 1 || port > 65535) {
+        console.error(`Error: Invalid port number: ${options.stagingPort}`);
+        process.exit(1);
+      }
+
+      const store = new StagingStore(path.resolve(options.staging));
+      store.init();
+
+      const cachePath = path.join(store.storeDir, "device-params.json");
+      let ctx = {
+        params: { ...DEFAULT_PARAMS },
+        palette: null,
+        width: options.displayWidth || 800,
+        height: options.displayHeight || 480,
+        orientation: "landscape",
+      };
+      if (fs.existsSync(cachePath)) {
+        try {
+          ctx = { ...ctx, ...JSON.parse(fs.readFileSync(cachePath, "utf8")) };
+          console.log("Loaded cached device parameters");
+        } catch {
+          console.log(
+            `Warning: ${cachePath} is corrupt, ignoring cached parameters`,
+          );
+        }
+      }
+      if (options.deviceParameters) {
+        try {
+          const settings = await fetchDeviceSettings(options.host);
+          const palette = await fetchDevicePalette(options.host);
+          const orientation = await fetchDeviceOrientation(options.host);
+          const sysInfo = await fetchDeviceSystemInfo(options.host);
+          ctx = {
+            params: { ...ctx.params, ...settings },
+            palette,
+            orientation,
+            width: sysInfo.width || ctx.width,
+            height: sysInfo.height || ctx.height,
+          };
+          fs.writeFileSync(cachePath, JSON.stringify(ctx, null, 2));
+          console.log("Fetched and cached device parameters");
+        } catch (error) {
+          console.log(
+            `Device not reachable (${error.message}), using cached/default parameters`,
+          );
+        }
+      }
+
+      await createStagingServer(store, ctx, { port });
+      console.log(`Staging store: ${store.storeDir}`);
+      console.log(
+        `Target display: ${ctx.width}x${ctx.height} (${ctx.orientation})`,
+      );
+      console.log("Press Ctrl+C to stop");
+      return; // Server runs indefinitely
+    }
+
+    if (!input) {
+      console.error("Error: missing input (required unless using --staging)");
+      process.exit(1);
+    }
 
     // Fetch device settings if --device-parameters is specified
     let deviceSettings = null;

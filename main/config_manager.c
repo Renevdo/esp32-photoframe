@@ -51,6 +51,9 @@ static char http_header_value[HTTP_HEADER_VALUE_MAX_LEN] = {0};
 static bool save_downloaded_images = false;
 static char image_etag[HTTP_ETAG_MAX_LEN] = {0};
 
+// Offline Album Sync
+static char sync_server_url[SYNC_SERVER_URL_MAX_LEN] = {0};
+
 // Home Assistant
 static char ha_url[HA_URL_MAX_LEN] = {0};
 
@@ -336,6 +339,13 @@ esp_err_t config_manager_init(void)
         size_t etag_len = HTTP_ETAG_MAX_LEN;
         if (nvs_get_str(nvs_handle, NVS_IMAGE_ETAG_KEY, image_etag, &etag_len) == ESP_OK) {
             ESP_LOGI(TAG, "Loaded image ETag from NVS (length: %zu)", etag_len);
+        }
+
+        // Offline Album Sync
+        size_t sync_url_len = SYNC_SERVER_URL_MAX_LEN;
+        if (nvs_get_str(nvs_handle, NVS_SYNC_SERVER_URL_KEY, sync_server_url, &sync_url_len) ==
+            ESP_OK) {
+            ESP_LOGI(TAG, "Loaded sync server URL from NVS: %s", sync_server_url);
         }
 
         // Home Assistant
@@ -1021,6 +1031,41 @@ const char *config_manager_get_image_etag(void)
 {
     return image_etag;
 }
+// ============================================================================
+// Offline Album Sync
+// ============================================================================
+
+void config_manager_set_sync_server_url(const char *url)
+{
+    const char *new_url = url ? url : "";
+    strncpy(sync_server_url, new_url, SYNC_SERVER_URL_MAX_LEN - 1);
+    sync_server_url[SYNC_SERVER_URL_MAX_LEN - 1] = '\0';
+
+    // Strip trailing slashes so the sync client can safely append "/api/...".
+    size_t len = strlen(sync_server_url);
+    while (len > 0 && sync_server_url[len - 1] == '/') {
+        sync_server_url[--len] = '\0';
+    }
+
+    nvs_handle_t nvs_handle;
+    if (nvs_open(NVS_NAMESPACE, NVS_READWRITE, &nvs_handle) == ESP_OK) {
+        if (sync_server_url[0] != '\0') {
+            nvs_set_str(nvs_handle, NVS_SYNC_SERVER_URL_KEY, sync_server_url);
+        } else {
+            nvs_erase_key(nvs_handle, NVS_SYNC_SERVER_URL_KEY);
+        }
+        nvs_commit(nvs_handle);
+        nvs_close(nvs_handle);
+    }
+
+    ESP_LOGI(TAG, "Sync server URL set to: %s", sync_server_url[0] ? sync_server_url : "(empty)");
+}
+
+const char *config_manager_get_sync_server_url(void)
+{
+    return sync_server_url;
+}
+
 // ============================================================================
 // Home Assistant
 // ============================================================================

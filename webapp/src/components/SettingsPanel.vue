@@ -714,6 +714,16 @@ async function performFactoryReset() {
                   </v-card-text>
                 </v-card>
               </v-expand-transition>
+
+              <v-text-field
+                v-model="settingsStore.deviceSettings.syncServerUrl"
+                label="Sync Server URL (Optional)"
+                variant="outlined"
+                placeholder="http://192.168.1.50:8090"
+                hint="Local staging server for offline album preparation. Deployed changes are pulled on every scheduled wake (adds a WiFi connection per wake in SD card mode). Leave empty to disable."
+                persistent-hint
+                class="mt-4"
+              />
             </div>
           </v-tabs-window-item>
 

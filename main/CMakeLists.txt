@@ -19,6 +19,8 @@ set(SOURCES
     "splash_screen.c"
     "storage.c"
     "cron.c"
+    "sync_client.c"
+    "sync_ops.c"
     "utils.c"
     "wifi_manager.c"
     "wifi_provisioning.c"
