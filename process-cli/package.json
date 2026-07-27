@@ -54,6 +54,7 @@
     "utils.js",
     "server.js",
     "device-config.js",
+    "staging/",
     "README.md"
   ]
 }
