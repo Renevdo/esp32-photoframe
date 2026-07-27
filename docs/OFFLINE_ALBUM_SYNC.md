@@ -59,7 +59,18 @@ button presses on the device, no need to catch it awake.
   spreads over several wakes; files already present with the right size are
   skipped, so resumes are cheap.
 - **Atomicity**: files are downloaded to a temp name and renamed, so a power
-  loss mid-download never corrupts an album.
+  loss mid-download never corrupts an album. A transfer cut short is detected
+  by comparing the bytes written against the size the server advertised, and
+  the op is retried on the next wake rather than acked.
+- **Journal size**: `state.json` keeps the deployed manifest once plus the ops
+  per sequence. Entries acknowledged by every device the server has seen are
+  pruned, so the file grows with the number of staged files, not with the
+  number of deploys.
+- **Fresh devices get a snapshot**: `changes?since=0` returns a put for every
+  currently staged file instead of replaying the whole journal, since a device
+  at sequence 0 has nothing to delete. A device that falls so far behind that
+  its ops have been pruned is answered with a reset and restarts from that
+  snapshot.
 - **Device-only albums are safe**: sync only touches files named in ops.
   Albums that exist only on the device (e.g. Downloads) are never modified.
 - **Store reset**: if you delete the staging store's `state.json` (or the
