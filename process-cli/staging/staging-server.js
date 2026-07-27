@@ -8,6 +8,7 @@ import fs from "fs";
 import path from "path";
 import { addPhoto, removePhoto, removeAlbum } from "./intake.js";
 import { isSafeName } from "./ops.js";
+import { proxyRoute } from "./proxy-routes.js";
 import { UI_HTML } from "./ui.js";
 
 const MAX_UPLOAD = 50 * 1024 * 1024;
@@ -219,6 +220,16 @@ export function createStagingServer(store, ctx, options = {}) {
         path.join(store.albumsDir, seg[3], `${seg[4]}.jpg`),
         "image/jpeg",
       );
+    }
+
+    // Virtual photoframe proxy: device REST API for the companion app
+    if (options.virtual) {
+      const handled = await proxyRoute(req, res, u, seg, {
+        store,
+        virtual: options.virtual,
+        autoDeploy: options.autoDeploy !== false,
+      });
+      if (handled) return;
     }
 
     json(res, 404, { error: "not found" });
