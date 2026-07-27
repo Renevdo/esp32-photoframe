@@ -6,69 +6,13 @@
 import http from "http";
 import fs from "fs";
 import path from "path";
+import { collectBody, json, parseJsonBody, sendFile } from "./http-util.js";
 import { addPhoto, removePhoto, removeAlbum } from "./intake.js";
 import { isSafeName } from "./ops.js";
+import { proxyRoute } from "./proxy-routes.js";
 import { UI_HTML } from "./ui.js";
 
 const MAX_UPLOAD = 50 * 1024 * 1024;
-
-function json(res, code, obj) {
-  const body = JSON.stringify(obj);
-  res.writeHead(code, { "content-type": "application/json" });
-  res.end(body);
-}
-
-// Stream the file so large epdgz downloads neither block the event loop nor
-// buffer whole files in memory.
-function sendFile(res, filePath, contentType) {
-  let size;
-  try {
-    size = fs.statSync(filePath).size;
-  } catch {
-    return json(res, 404, { error: "not found" });
-  }
-  res.writeHead(200, {
-    "content-type": contentType,
-    "content-length": size,
-  });
-  fs.createReadStream(filePath)
-    .on("error", () => res.destroy())
-    .pipe(res);
-}
-
-function collectBody(req, cap) {
-  return new Promise((resolve, reject) => {
-    const chunks = [];
-    let total = 0;
-    req.on("data", (c) => {
-      total += c.length;
-      if (total > cap) {
-        const err = new Error("body too large");
-        err.statusCode = 413;
-        // Stop consuming but keep the socket alive so the 413 response can
-        // still be delivered; the connection closes after the response.
-        req.removeAllListeners("data");
-        req.removeAllListeners("end");
-        req.pause();
-        reject(err);
-        return;
-      }
-      chunks.push(c);
-    });
-    req.on("end", () => resolve(Buffer.concat(chunks)));
-    req.on("error", reject);
-  });
-}
-
-function parseJsonBody(buffer) {
-  try {
-    return JSON.parse(buffer.toString());
-  } catch {
-    const err = new Error("invalid JSON body");
-    err.statusCode = 400;
-    throw err;
-  }
-}
 
 function listAlbums(store) {
   const albums = [];
@@ -219,6 +163,17 @@ export function createStagingServer(store, ctx, options = {}) {
         path.join(store.albumsDir, seg[3], `${seg[4]}.jpg`),
         "image/jpeg",
       );
+    }
+
+    // Virtual photoframe proxy: device REST API for the companion app
+    if (options.virtual) {
+      const handled = await proxyRoute(req, res, u, seg, {
+        store,
+        ctx,
+        virtual: options.virtual,
+        autoDeploy: options.autoDeploy !== false,
+      });
+      if (handled) return;
     }
 
     json(res, 404, { error: "not found" });
