@@ -4,7 +4,14 @@
  * Layout under storeDir:
  *   albums/<album>/<name>.epdgz|.jpg   processed, device-ready files
  *   originals/<album>/<name>.<ext>     uploaded originals (for reprocessing)
- *   state.json                         { deployments, devices }
+ *   state.json                         { latestSeq, manifest, deployments, devices }
+ *
+ * `manifest` is the single snapshot of the last deployed state, and
+ * `deployments` holds only the ops per seq. Keeping a manifest per deployment
+ * made state.json grow with (files x deployments), which with auto-deploy is
+ * one deployment per photo. Entries every known device has acked are pruned,
+ * so a device that falls behind the retained window is told to reset and
+ * restarts from a snapshot.
  */
 
 import fs from "fs";
@@ -17,7 +24,7 @@ export class StagingStore {
     this.albumsDir = path.join(storeDir, "albums");
     this.originalsDir = path.join(storeDir, "originals");
     this.statePath = path.join(storeDir, "state.json");
-    this.state = { deployments: [], devices: {} };
+    this.state = { latestSeq: 0, manifest: {}, deployments: [], devices: {} };
   }
 
   init() {
@@ -37,9 +44,29 @@ export class StagingStore {
         );
         this.saveState();
       }
+      this.#migrate();
     } else {
       this.saveState();
     }
+  }
+
+  // Pre-manifest-split stores kept a full manifest on every deployment and
+  // derived latestSeq from the journal tail.
+  #migrate() {
+    if (this.state.manifest !== undefined) {
+      return;
+    }
+    const deployments = this.state.deployments ?? [];
+    const last = deployments[deployments.length - 1];
+    this.state.latestSeq = last ? last.seq : 0;
+    this.state.manifest = last?.manifest ?? {};
+    this.state.deployments = deployments.map(({ seq, ops, at }) => ({
+      seq,
+      ops,
+      at,
+    }));
+    this.state.devices = this.state.devices ?? {};
+    this.saveState();
   }
 
   saveState() {
@@ -49,13 +76,11 @@ export class StagingStore {
   }
 
   get latestSeq() {
-    const d = this.state.deployments;
-    return d.length ? d[d.length - 1].seq : 0;
+    return this.state.latestSeq ?? 0;
   }
 
   lastDeployedManifest() {
-    const d = this.state.deployments;
-    return d.length ? d[d.length - 1].manifest : {};
+    return this.state.manifest ?? {};
   }
 
   currentManifest() {
@@ -85,18 +110,46 @@ export class StagingStore {
       return { seq: this.latestSeq, ops: [] };
     }
     const seq = this.latestSeq + 1;
-    this.state.deployments.push({
-      seq,
-      ops,
-      manifest,
-      at: new Date().toISOString(),
-    });
+    this.state.latestSeq = seq;
+    this.state.manifest = manifest;
+    this.state.deployments.push({ seq, ops, at: new Date().toISOString() });
+    this.#pruneAckedDeployments();
     this.saveState();
     return { seq, ops };
   }
 
+  // Journal entries below every known device's acked seq can never be
+  // requested again, so they are dropped to keep state.json bounded.
+  #pruneAckedDeployments() {
+    const acked = Object.values(this.state.devices);
+    if (acked.length === 0) {
+      return;
+    }
+    const floor = Math.min(...acked);
+    this.state.deployments = this.state.deployments.filter(
+      (d) => d.seq > floor,
+    );
+  }
+
+  // The seq of the oldest journal entry still available for replay.
+  get #oldestRetainedSeq() {
+    const d = this.state.deployments;
+    return d.length ? d[0].seq : this.latestSeq + 1;
+  }
+
   changesSince(sinceSeq) {
     if (sinceSeq > this.latestSeq) {
+      return { reset: true };
+    }
+    // A device at seq 0 holds nothing, so replaying history would just send
+    // deletes for files it never had. Send what is staged right now instead.
+    if (sinceSeq === 0) {
+      return {
+        latestSeq: this.latestSeq,
+        ops: computeOps({}, this.lastDeployedManifest()),
+      };
+    }
+    if (sinceSeq < this.#oldestRetainedSeq - 1) {
       return { reset: true };
     }
     const newer = this.state.deployments.filter((d) => d.seq > sinceSeq);
@@ -108,6 +161,7 @@ export class StagingStore {
 
   ack(deviceId, seq) {
     this.state.devices[deviceId] = seq;
+    this.#pruneAckedDeployments();
     this.saveState();
   }
 
