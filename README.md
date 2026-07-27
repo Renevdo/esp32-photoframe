@@ -46,8 +46,8 @@ This project has companion tools for different use cases:
 </tr>
 <tr>
 <td><a href="https://github.com/aitjcize/esp32-photoframe/raw/refs/heads/main/.img/sample.jpg"><img src=".img/sample.jpg" width="200"/></a></td>
-<td><a href="https://github.com/aitjcize/esp32-photoframe/raw/refs/heads/main/.img/stock_algorithm_on_computer.png"><img src=".img/stock_algorithm_on_computer.png" width="200"/></a></td>
-<td><a href="https://github.com/aitjcize/esp32-photoframe/raw/refs/heads/main/.img/stock_algorithm.png"><img src=".img/stock_algorithm.png" width="200"/></a></td>
+<td><a href=".img/stock_algorithm_on_computer.png"><img src=".img/stock_algorithm_on_computer.png" width="200"/></a></td>
+<td><a href=".img/stock_algorithm.png"><img src=".img/stock_algorithm.png" width="200"/></a></td>
 <td><a href="https://github.com/aitjcize/esp32-photoframe/raw/refs/heads/main/.img/our_algorithm.png"><img src=".img/our_algorithm.png" width="200"/></a></td>
 </tr>
 <tr>
