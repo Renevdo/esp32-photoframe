@@ -17,16 +17,20 @@ STEPS = ["webapp", "splash", "firmware"]
 def build_webapp():
     """Build the webapp (npm install + npm run build)."""
     print("\n=== Building webapp ===")
+    root = os.path.dirname(os.path.abspath(__file__))
     try:
-        # A native dependency's prebuilt binary download can fail transiently in
+        # Single install for the whole workspace (webapp + process-cli). A
+        # native dependency's prebuilt binary download can fail transiently in
         # CI and fall into a compile that the runner can't do; one retry
         # fetches it.
         try:
-            subprocess.run("npm install", shell=True, check=True, cwd="webapp")
+            subprocess.run("npm install", shell=True, check=True, cwd=root)
         except subprocess.CalledProcessError:
             print("  npm install failed, retrying once...", flush=True)
-            subprocess.run("npm install", shell=True, check=True, cwd="webapp")
-        subprocess.run("npm run build", shell=True, check=True, cwd="webapp")
+            subprocess.run("npm install", shell=True, check=True, cwd=root)
+        subprocess.run(
+            "npm run build --workspace=webapp", shell=True, check=True, cwd=root
+        )
     except subprocess.CalledProcessError as e:
         print(f"  ✗ Webapp build failed with exit code {e.returncode}")
         sys.exit(e.returncode)
@@ -40,18 +44,18 @@ def build_webapp():
 def generate_splash(board):
     """Generate splash screen EPDGZ for the target board."""
     print(f"\n=== Generating splash screen for {board} ===", flush=True)
-    output_dir = os.path.join(os.path.dirname(__file__), "main", "splash_data")
-    script = os.path.join(os.path.dirname(__file__), "scripts", "generate_splash.py")
-    process_cli_dir = os.path.join(os.path.dirname(__file__), "process-cli")
+    root = os.path.dirname(os.path.abspath(__file__))
+    output_dir = os.path.join(root, "main", "splash_data")
+    script = os.path.join(root, "scripts", "generate_splash.py")
 
-    # Ensure process-cli dependencies are installed
-    node_modules = os.path.join(process_cli_dir, "node_modules")
-    if not os.path.isdir(node_modules):
-        print("  Installing process-cli dependencies...")
+    # Workspace deps are hoisted to the repo root, so one install covers
+    # process-cli (which generate_splash.py drives).
+    if not os.path.isdir(os.path.join(root, "node_modules")):
+        print("  Installing workspace dependencies...")
         try:
-            subprocess.run("npm ci", shell=True, check=True, cwd=process_cli_dir)
+            subprocess.run("npm ci", shell=True, check=True, cwd=root)
         except subprocess.CalledProcessError as e:
-            print(f"  ✗ npm ci failed in process-cli with exit code {e.returncode}")
+            print(f"  ✗ npm ci failed with exit code {e.returncode}")
             sys.exit(e.returncode)
 
     try:
