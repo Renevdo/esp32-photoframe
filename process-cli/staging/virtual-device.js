@@ -39,7 +39,13 @@ export class VirtualDevice {
   }
 
   applyConfig(patch) {
-    const overrides = { ...this.readJson(this.overridesPath), ...patch };
+    // Drop prototype-polluting keys from the untrusted patch before merging.
+    const clean = {};
+    for (const [key, value] of Object.entries(patch || {})) {
+      if (["__proto__", "constructor", "prototype"].includes(key)) continue;
+      clean[key] = value;
+    }
+    const overrides = { ...this.readJson(this.overridesPath), ...clean };
     fs.writeFileSync(this.overridesPath, JSON.stringify(overrides, null, 2));
     return this.config();
   }

@@ -53,3 +53,18 @@ test("throws without boundary", () => {
     /boundary/i,
   );
 });
+
+test("boundary bytes inside part data do not truncate the part", () => {
+  // payload contains the bare boundary marker without a preceding CRLF
+  const payload = Buffer.concat([
+    Buffer.from("before--XBOUND"),
+    Buffer.from([0x00, 0x01]),
+    Buffer.from("after"),
+  ]);
+  const body = buildBody("XBOUND", [
+    { name: "image", filename: "tricky.bin", data: payload },
+  ]);
+  const parts = parseMultipart(body, "multipart/form-data; boundary=XBOUND");
+  expect(parts).toHaveLength(1);
+  expect(Buffer.compare(parts[0].data, payload)).toBe(0);
+});
