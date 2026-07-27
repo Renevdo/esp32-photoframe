@@ -784,6 +784,16 @@ program
   )
   .option("--staging-port <port>", "Port for staging server", "8090")
   .option(
+    "--staging-name <name>",
+    "Instance name the companion app sees via mDNS",
+    "PhotoFrame Staging",
+  )
+  .option("--no-staging-mdns", "Do not advertise the staging server via mDNS")
+  .option(
+    "--no-staging-auto-deploy",
+    "Require an explicit Deploy instead of deploying on every app edit",
+  )
+  .option(
     "--host <host>",
     "Device hostname or IP address (default: photoframe.local)",
     "photoframe.local",
@@ -920,6 +930,21 @@ program
           };
           fs.writeFileSync(cachePath, JSON.stringify(ctx, null, 2));
           console.log("Fetched and cached device parameters");
+
+          // Cache the full device config and system info so the virtual
+          // frame can answer the companion app with real values later.
+          for (const [endpoint, file] of [
+            ["config", "device-config.json"],
+            ["system-info", "device-system-info.json"],
+          ]) {
+            const res = await fetch(`http://${options.host}/api/${endpoint}`);
+            if (res.ok) {
+              fs.writeFileSync(
+                path.join(store.storeDir, file),
+                JSON.stringify(await res.json(), null, 2),
+              );
+            }
+          }
         } catch (error) {
           console.log(
             `Device not reachable (${error.message}), using cached/default parameters`,
@@ -927,7 +952,47 @@ program
         }
       }
 
-      await createStagingServer(store, ctx, { port });
+      // Virtual photoframe proxy for the companion app
+      const { VirtualDevice } = await import("./staging/virtual-device.js");
+      const cachedInfo = (() => {
+        try {
+          return JSON.parse(
+            fs.readFileSync(
+              path.join(store.storeDir, "device-system-info.json"),
+              "utf8",
+            ),
+          );
+        } catch {
+          return {};
+        }
+      })();
+      const virtual = new VirtualDevice(store, {
+        instanceName: options.stagingName,
+        width: ctx.width,
+        height: ctx.height,
+        board: cachedInfo.board_name,
+        version: cachedInfo.version,
+      });
+
+      await createStagingServer(store, ctx, {
+        port,
+        virtual,
+        autoDeploy: options.stagingAutoDeploy !== false,
+      });
+
+      if (options.stagingMdns !== false) {
+        const { advertise } = await import("./staging/mdns.js");
+        advertise({
+          port,
+          instanceName: options.stagingName,
+          board: cachedInfo.board_name,
+          version: cachedInfo.version,
+        });
+        console.log(
+          `Advertising "${options.stagingName}" via mDNS (_esp32-pframe._tcp, port ${port})`,
+        );
+      }
+
       console.log(`Staging store: ${store.storeDir}`);
       console.log(
         `Target display: ${ctx.width}x${ctx.height} (${ctx.orientation})`,

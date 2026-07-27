@@ -15,7 +15,11 @@ afterEach(() => fs.rmSync(dir, { recursive: true, force: true }));
 test("config merges cached device config with local overrides", () => {
   fs.writeFileSync(
     path.join(dir, "device-config.json"),
-    JSON.stringify({ device_name: "Real Frame", timezone: "CET-1CEST", auto_rotate: true }),
+    JSON.stringify({
+      device_name: "Real Frame",
+      timezone: "CET-1CEST",
+      auto_rotate: true,
+    }),
   );
   const v = new VirtualDevice(store, { instanceName: "Staging Frame" });
   const cfg = v.config();
@@ -43,7 +47,9 @@ test("systemInfo has device shape with stable virtual id", () => {
   expect(info.board_name).toBe("seeedstudio_xiao_ee02");
   expect(info.device_name).toBe("Staging Frame");
   expect(info.device_id).toMatch(/^VIRTUAL/);
-  expect(info.device_id).toBe(new VirtualDevice(store, {}).systemInfo().device_id);
+  expect(info.device_id).toBe(
+    new VirtualDevice(store, {}).systemInfo().device_id,
+  );
   for (const key of [
     "has_sdcard",
     "sdcard_inserted",
