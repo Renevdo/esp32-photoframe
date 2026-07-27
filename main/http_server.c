@@ -65,90 +65,78 @@ static bool is_path_safe(const char *path)
     return true;
 }
 
-extern const uint8_t index_html_start[] asm("_binary_index_html_start");
-extern const uint8_t index_html_end[] asm("_binary_index_html_end");
-extern const uint8_t index_css_start[] asm("_binary_index_css_start");
-extern const uint8_t index_css_end[] asm("_binary_index_css_end");
-extern const uint8_t index_js_start[] asm("_binary_index_js_start");
-extern const uint8_t index_js_end[] asm("_binary_index_js_end");
-extern const uint8_t index2_js_start[] asm("_binary_index2_js_start");
-extern const uint8_t index2_js_end[] asm("_binary_index2_js_end");
-extern const uint8_t exif_reader_js_start[] asm("_binary_exif_reader_js_start");
-extern const uint8_t exif_reader_js_end[] asm("_binary_exif_reader_js_end");
-extern const uint8_t browser_js_start[] asm("_binary_browser_js_start");
-extern const uint8_t browser_js_end[] asm("_binary_browser_js_end");
+// Webapp assets are embedded gzipped (see webapp/build/gzip-assets.js) and
+// served with Content-Encoding: gzip. The sample JPEG is embedded raw.
+extern const uint8_t index_html_start[] asm("_binary_index_html_gz_start");
+extern const uint8_t index_html_end[] asm("_binary_index_html_gz_end");
+extern const uint8_t index_css_start[] asm("_binary_index_css_gz_start");
+extern const uint8_t index_css_end[] asm("_binary_index_css_gz_end");
+extern const uint8_t index_js_start[] asm("_binary_index_js_gz_start");
+extern const uint8_t index_js_end[] asm("_binary_index_js_gz_end");
+extern const uint8_t index2_js_start[] asm("_binary_index2_js_gz_start");
+extern const uint8_t index2_js_end[] asm("_binary_index2_js_gz_end");
+extern const uint8_t exif_reader_js_start[] asm("_binary_exif_reader_js_gz_start");
+extern const uint8_t exif_reader_js_end[] asm("_binary_exif_reader_js_gz_end");
+extern const uint8_t browser_js_start[] asm("_binary_browser_js_gz_start");
+extern const uint8_t browser_js_end[] asm("_binary_browser_js_gz_end");
 extern const uint8_t vite_browser_external_js_start[] asm(
-    "_binary___vite_browser_external_js_start");
-extern const uint8_t vite_browser_external_js_end[] asm("_binary___vite_browser_external_js_end");
-extern const uint8_t icon_svg_start[] asm("_binary_icon_svg_start");
-extern const uint8_t icon_svg_end[] asm("_binary_icon_svg_end");
+    "_binary___vite_browser_external_js_gz_start");
+extern const uint8_t vite_browser_external_js_end[] asm(
+    "_binary___vite_browser_external_js_gz_end");
+extern const uint8_t icon_svg_start[] asm("_binary_icon_svg_gz_start");
+extern const uint8_t icon_svg_end[] asm("_binary_icon_svg_gz_end");
 extern const uint8_t measurement_sample_jpg_start[] asm("_binary_measurement_sample_jpg_start");
 extern const uint8_t measurement_sample_jpg_end[] asm("_binary_measurement_sample_jpg_end");
 
+// Send a gzip-embedded asset. Every browser advertises gzip, and the webapp is
+// only reachable from one, so the encoding is not negotiated.
+static esp_err_t send_gzipped(httpd_req_t *req, const char *content_type, const uint8_t *start,
+                              const uint8_t *end)
+{
+    httpd_resp_set_type(req, content_type);
+    httpd_resp_set_hdr(req, "Content-Encoding", "gzip");
+    return httpd_resp_send(req, (const char *) start, (size_t) (end - start));
+}
+
 static esp_err_t index_handler(httpd_req_t *req)
 {
-    const size_t index_html_size = (index_html_end - index_html_start);
-    httpd_resp_set_type(req, "text/html");
-    httpd_resp_send(req, (const char *) index_html_start, index_html_size);
-    return ESP_OK;
+    return send_gzipped(req, "text/html", index_html_start, index_html_end);
 }
 
 static esp_err_t index_css_handler(httpd_req_t *req)
 {
-    const size_t index_css_size = (index_css_end - index_css_start);
-    httpd_resp_set_type(req, "text/css");
-    httpd_resp_send(req, (const char *) index_css_start, index_css_size);
-    return ESP_OK;
+    return send_gzipped(req, "text/css", index_css_start, index_css_end);
 }
 
 static esp_err_t index_js_handler(httpd_req_t *req)
 {
-    const size_t index_js_size = (index_js_end - index_js_start);
-    httpd_resp_set_type(req, "application/javascript");
-    httpd_resp_send(req, (const char *) index_js_start, index_js_size);
-    return ESP_OK;
+    return send_gzipped(req, "application/javascript", index_js_start, index_js_end);
 }
 
 static esp_err_t index2_js_handler(httpd_req_t *req)
 {
-    const size_t index2_js_size = (index2_js_end - index2_js_start);
-    httpd_resp_set_type(req, "application/javascript");
-    httpd_resp_send(req, (const char *) index2_js_start, index2_js_size);
-    return ESP_OK;
+    return send_gzipped(req, "application/javascript", index2_js_start, index2_js_end);
 }
 
 static esp_err_t exif_reader_js_handler(httpd_req_t *req)
 {
-    const size_t exif_reader_js_size = (exif_reader_js_end - exif_reader_js_start);
-    httpd_resp_set_type(req, "application/javascript");
-    httpd_resp_send(req, (const char *) exif_reader_js_start, exif_reader_js_size);
-    return ESP_OK;
+    return send_gzipped(req, "application/javascript", exif_reader_js_start, exif_reader_js_end);
 }
 
 static esp_err_t browser_js_handler(httpd_req_t *req)
 {
-    const size_t browser_js_size = (browser_js_end - browser_js_start);
-    httpd_resp_set_type(req, "application/javascript");
-    httpd_resp_send(req, (const char *) browser_js_start, browser_js_size);
-    return ESP_OK;
+    return send_gzipped(req, "application/javascript", browser_js_start, browser_js_end);
 }
 
 static esp_err_t vite_browser_external_js_handler(httpd_req_t *req)
 {
-    const size_t vite_browser_external_js_size =
-        (vite_browser_external_js_end - vite_browser_external_js_start);
-    httpd_resp_set_type(req, "application/javascript");
-    httpd_resp_send(req, (const char *) vite_browser_external_js_start,
-                    vite_browser_external_js_size);
-    return ESP_OK;
+    return send_gzipped(req, "application/javascript", vite_browser_external_js_start,
+                        vite_browser_external_js_end);
 }
 
 static esp_err_t icon_handler(httpd_req_t *req)
 {
-    const size_t icon_svg_size = (icon_svg_end - icon_svg_start);
-    httpd_resp_set_type(req, "image/svg+xml");
-    httpd_resp_send(req, (const char *) icon_svg_start, icon_svg_size);
-    return ESP_OK;
+    return send_gzipped(req, "image/svg+xml", icon_svg_start, icon_svg_end);
 }
 
 static esp_err_t measurement_sample_handler(httpd_req_t *req)
