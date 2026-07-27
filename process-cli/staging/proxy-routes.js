@@ -77,6 +77,8 @@ export async function proxyRoute(req, res, u, seg, opts) {
       return true;
     }
     fs.mkdirSync(path.join(store.albumsDir, body.name), { recursive: true });
+    // No deploy here: the sync manifest is file-based, so an empty album has
+    // no ops to ship. The album reaches the real frame with its first photo.
     success(res);
     return true;
   }
