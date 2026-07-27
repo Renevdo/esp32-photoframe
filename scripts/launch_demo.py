@@ -286,7 +286,10 @@ def copy_required_files(demo_dir, project_root):
             if e.stderr:
                 print(f"    {e.stderr.strip()}")
     elif cli is None:
-        print("  ⚠ Warning: epaper-image-convert CLI not found (run npm install)")
+        print(
+            "  ⚠ Warning: epaper-image-convert CLI not found "
+            "(run 'npm ci' in the repo root)"
+        )
 
 
 def generate_manifests(project_root, boards=None):
