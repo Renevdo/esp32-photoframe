@@ -23,9 +23,15 @@ function success(res, extra = {}) {
 // mirroring how sync-created albums behave on the device.
 function readEnabled(store) {
   try {
-    return JSON.parse(
+    const parsed = JSON.parse(
       fs.readFileSync(path.join(store.storeDir, "proxy-albums.json"), "utf8"),
     );
+    // A manually edited file could hold valid JSON that is not an object
+    // (array, null, number); only a plain object works as a flag map.
+    if (parsed && typeof parsed === "object" && !Array.isArray(parsed)) {
+      return parsed;
+    }
+    return {};
   } catch {
     return {};
   }
