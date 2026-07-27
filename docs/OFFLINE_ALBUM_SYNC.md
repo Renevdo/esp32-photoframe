@@ -88,9 +88,10 @@ the app land in the staging store and reach the real frame on its next wake.
   app must honor the advertised service port (the virtual frame does not run
   on port 80 unless you pass `--staging-port 80`, which needs elevated
   privileges). Disable advertising with `--no-staging-mdns`.
-- **Settings**: settings changed on the virtual frame apply to the virtual
-  frame only in this version; change real device settings through the device
-  web UI or Home Assistant.
+- **Settings and album toggles**: settings changed on the virtual frame, and
+  album enable/disable toggles, apply to the virtual frame only in this
+  version; the deploy-on-wake sync carries album content, not metadata.
+  Change real device settings through the device web UI or Home Assistant.
 - **Identity**: the virtual frame reports cached real-device values (board,
   resolution, firmware version) when `--device-parameters` has succeeded at
   least once, a synthetic `VIRTUAL...` device id, and a full battery.
