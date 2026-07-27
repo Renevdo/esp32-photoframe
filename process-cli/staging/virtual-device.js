@@ -22,7 +22,14 @@ export class VirtualDevice {
 
   readJson(p) {
     try {
-      return JSON.parse(fs.readFileSync(p, "utf8"));
+      const parsed = JSON.parse(fs.readFileSync(p, "utf8"));
+      // Guard against valid-JSON-but-not-an-object content (null, number,
+      // array): spreading an array would persist its index keys into the
+      // config, so only plain objects pass through.
+      if (parsed && typeof parsed === "object" && !Array.isArray(parsed)) {
+        return parsed;
+      }
+      return {};
     } catch {
       return {};
     }

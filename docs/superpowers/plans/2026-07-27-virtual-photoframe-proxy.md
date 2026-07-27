@@ -15,7 +15,7 @@
 - Never claim the real device identity: own hostname, own instance name, never `photoframe.local`
 - Device API response shapes mirror `main/http_server.c` exactly:
   - `GET /api/albums` -> `[{name, enabled}]`
-  - `POST /api/albums {name}` / `DELETE /api/albums?name=` / `POST /api/albums/enabled?name= {enabled}` -> `{status:"success"}`
+  - `POST /api/albums {name}` / `DELETE /api/albums?name=` / `PUT /api/albums/enabled?name= {enabled}` -> `{status:"success"}`
   - `GET /api/images?album=` -> `[{filename, album, thumbnail?}]` (filename = display file, thumbnail = jpg name when present)
   - `POST /api/upload?album=` multipart fields `image` (png/epdgz, filename preserved) + `thumbnail` (jpg) -> `{status:"success", filepath}`
   - `POST /api/delete {filepath:"album/file.ext"}` -> `{status:"success"}` (thumbnail removed too)
