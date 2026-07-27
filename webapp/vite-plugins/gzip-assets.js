@@ -8,12 +8,13 @@
  * shrinks every page load over the device's WiFi by the same factor. The device
  * never decompresses: it hands the stored bytes to the browser as-is.
  *
- * Originals are replaced, not kept alongside, so main/CMakeLists.txt embeds one
- * copy. Only the firmware build uses this; the GitHub Pages demo build serves
- * plain files.
+ * The originals are kept alongside the .gz. main/CMakeLists.txt names only the
+ * .gz files, so nothing extra reaches flash, and `vite preview` still has the
+ * plain files index.html references. Only the firmware build uses this; the
+ * GitHub Pages demo build serves plain files.
  */
 import { gzipSync } from "zlib";
-import { readdirSync, readFileSync, statSync, unlinkSync, writeFileSync } from "fs";
+import { readdirSync, readFileSync, statSync, writeFileSync } from "fs";
 import { join } from "path";
 
 function gzipTree(dir) {
@@ -31,7 +32,6 @@ function gzipTree(dir) {
     // level 9: build-time cost is irrelevant, flash bytes are not
     const gz = gzipSync(raw, { level: 9 });
     writeFileSync(`${full}.gz`, gz);
-    unlinkSync(full);
     saved += raw.length - gz.length;
   }
   return saved;
