@@ -96,6 +96,19 @@ photoframe-process --serve ~/Photos --serve-port 9000 --serve-format epdgz
 
 Serves random images on each request. Configure ESP32: **Rotation Mode** → URL, **Image URL** → `http://your-ip:9000/image`
 
+### Staging Mode (offline album preparation)
+
+```bash
+# Start the staging server (fetches and caches device parameters when the
+# device happens to be awake; falls back to the cache afterwards)
+photoframe-process --staging ~/PhotoframeStaging --staging-port 8090 --device-parameters --host photoframe.local
+```
+
+Open `http://localhost:8090`, create albums, upload photos (processed locally
+to device format), and press **Deploy**. The device pulls the deployed changes
+on its next scheduled wake; set **Sync Server URL** in the device settings to
+`http://<your-ip>:8090`. See [docs/OFFLINE_ALBUM_SYNC.md](../docs/OFFLINE_ALBUM_SYNC.md).
+
 ## Options
 
 ```
