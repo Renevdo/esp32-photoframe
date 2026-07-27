@@ -7,9 +7,19 @@
 import os from "os";
 import { Bonjour } from "bonjour-service";
 
+// TXT host for the virtual frame. Guard against a machine that is itself
+// named "photoframe": the proxy must never claim the real device identity.
+export function stagingHost(rawHostname) {
+  let name = rawHostname.replace(/\.local$/i, "");
+  if (name.toLowerCase() === "photoframe") {
+    name = `${name}-staging`;
+  }
+  return `${name}.local`;
+}
+
 export function advertise({ port, instanceName, board, version }) {
   const bonjour = new Bonjour();
-  const host = `${os.hostname().replace(/\.local$/i, "")}.local`;
+  const host = stagingHost(os.hostname());
 
   const service = bonjour.publish({
     name: instanceName,
