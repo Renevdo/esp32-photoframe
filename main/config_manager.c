@@ -1058,8 +1058,7 @@ void config_manager_set_sync_server_url(const char *url)
         nvs_close(nvs_handle);
     }
 
-    ESP_LOGI(TAG, "Sync server URL set to: %s",
-             sync_server_url[0] ? sync_server_url : "(empty)");
+    ESP_LOGI(TAG, "Sync server URL set to: %s", sync_server_url[0] ? sync_server_url : "(empty)");
 }
 
 const char *config_manager_get_sync_server_url(void)
