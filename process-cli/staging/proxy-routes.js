@@ -6,36 +6,14 @@
 
 import fs from "fs";
 import path from "path";
+import { collectBody, json, parseJsonBody } from "./http-util.js";
 import { parseMultipart } from "./multipart.js";
 import { isSafeName } from "./ops.js";
 
 const MAX_UPLOAD = 50 * 1024 * 1024;
 
-function json(res, code, obj) {
-  res.writeHead(code, { "content-type": "application/json" });
-  res.end(JSON.stringify(obj));
-}
-
 function success(res, extra = {}) {
   json(res, 200, { status: "success", ...extra });
-}
-
-function collectBody(req, cap) {
-  return new Promise((resolve, reject) => {
-    const chunks = [];
-    let total = 0;
-    req.on("data", (c) => {
-      total += c.length;
-      if (total > cap) {
-        reject(new Error("body too large"));
-        req.destroy();
-        return;
-      }
-      chunks.push(c);
-    });
-    req.on("end", () => resolve(Buffer.concat(chunks)));
-    req.on("error", reject);
-  });
 }
 
 // Album enabled flags live beside the store; albums default to enabled,
@@ -68,10 +46,10 @@ function safePathPair(value) {
 
 /**
  * Handle a device-API request. Returns true when the request was handled.
- * opts: {store, virtual, autoDeploy}
+ * opts: {store, ctx, virtual, autoDeploy}
  */
 export async function proxyRoute(req, res, u, seg, opts) {
-  const { store, virtual, autoDeploy } = opts;
+  const { store, ctx, virtual, autoDeploy } = opts;
   if (seg[0] !== "api") return false;
   const route = seg.join("/");
 
@@ -93,7 +71,7 @@ export async function proxyRoute(req, res, u, seg, opts) {
 
   // POST /api/albums {name}
   if (route === "api/albums" && req.method === "POST") {
-    const body = JSON.parse((await collectBody(req, 4096)).toString());
+    const body = parseJsonBody(await collectBody(req, 4096));
     if (!isSafeName(body.name)) {
       json(res, 400, { error: "Missing album name" });
       return true;
@@ -129,7 +107,7 @@ export async function proxyRoute(req, res, u, seg, opts) {
   // POST /api/albums/enabled?name= {enabled}
   if (route === "api/albums/enabled" && req.method === "POST") {
     const name = u.searchParams.get("name");
-    const body = JSON.parse((await collectBody(req, 4096)).toString());
+    const body = parseJsonBody(await collectBody(req, 4096));
     if (!isSafeName(name) || typeof body.enabled !== "boolean") {
       json(res, 400, { error: "Missing enabled field" });
       return true;
@@ -195,7 +173,7 @@ export async function proxyRoute(req, res, u, seg, opts) {
 
   // POST /api/delete {filepath: "album/file.ext"}
   if (route === "api/delete" && req.method === "POST") {
-    const body = JSON.parse((await collectBody(req, 4096)).toString());
+    const body = parseJsonBody(await collectBody(req, 4096));
     const pair = safePathPair(body.filepath);
     if (!pair) {
       json(res, 400, { error: "Invalid filepath" });
@@ -278,7 +256,7 @@ export async function proxyRoute(req, res, u, seg, opts) {
     route === "api/config" &&
     (req.method === "POST" || req.method === "PATCH")
   ) {
-    const body = JSON.parse((await collectBody(req, 64 * 1024)).toString());
+    const body = parseJsonBody(await collectBody(req, 64 * 1024));
     virtual.applyConfig(body);
     success(res);
     return true;
@@ -293,32 +271,55 @@ export async function proxyRoute(req, res, u, seg, opts) {
     return true;
   }
 
-  // Processing settings and palette: store passthrough JSON blobs
-  if (route === "api/settings/processing" || route === "api/settings/palette") {
-    const file = path.join(
-      store.storeDir,
-      route === "api/settings/processing"
-        ? "proxy-processing.json"
-        : "proxy-palette.json",
-    );
+  // Processing settings: stored blob when POSTed, otherwise defaults (the
+  // device-parameter cache or library defaults), mirroring the firmware where
+  // GET falls back to defaults and DELETE resets and returns them.
+  if (route === "api/settings/processing") {
+    const file = path.join(store.storeDir, "proxy-processing.json");
+    const defaults = () => ({ ...(ctx?.params || {}) });
     if (req.method === "GET") {
       try {
         json(res, 200, JSON.parse(fs.readFileSync(file, "utf8")));
       } catch {
-        json(res, 200, {});
+        json(res, 200, defaults());
       }
       return true;
     }
     if (req.method === "POST") {
       const body = await collectBody(req, 256 * 1024);
-      JSON.parse(body.toString()); // validate
+      parseJsonBody(body); // validate
       fs.writeFileSync(file, body);
       json(res, 200, { success: true });
       return true;
     }
     if (req.method === "DELETE") {
       fs.rmSync(file, { force: true });
+      json(res, 200, defaults());
+      return true;
+    }
+  }
+
+  // Palette: stored blob, defaulting to the cached device palette when known
+  if (route === "api/settings/palette") {
+    const file = path.join(store.storeDir, "proxy-palette.json");
+    if (req.method === "GET") {
+      try {
+        json(res, 200, JSON.parse(fs.readFileSync(file, "utf8")));
+      } catch {
+        json(res, 200, ctx?.palette || {});
+      }
+      return true;
+    }
+    if (req.method === "POST") {
+      const body = await collectBody(req, 256 * 1024);
+      parseJsonBody(body); // validate
+      fs.writeFileSync(file, body);
       json(res, 200, { success: true });
+      return true;
+    }
+    if (req.method === "DELETE") {
+      fs.rmSync(file, { force: true });
+      json(res, 200, ctx?.palette || {});
       return true;
     }
   }

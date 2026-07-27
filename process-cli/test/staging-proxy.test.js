@@ -2,6 +2,7 @@ import { jest } from "@jest/globals";
 import fs from "fs";
 import os from "os";
 import path from "path";
+import fetch from "node-fetch";
 import { createCanvas } from "canvas";
 import { getDefaultParams } from "@aitjcize/epaper-image-convert";
 import { StagingStore } from "../staging/store.js";
@@ -32,8 +33,8 @@ beforeEach(async () => {
   });
   base = `http://127.0.0.1:${server.address().port}`;
 });
-afterEach(() => {
-  server.close();
+afterEach(async () => {
+  await new Promise((resolve) => server.close(resolve));
   fs.rmSync(dir, { recursive: true, force: true });
 });
 
@@ -146,6 +147,40 @@ test("config, battery, system-info are device shaped", async () => {
   const info = await res.json();
   expect(info.device_id).toMatch(/^VIRTUAL/);
   expect(info.project_name).toBe("esp32-photoframe-staging");
+});
+
+test("processing settings mirror the device contract", async () => {
+  // GET with nothing stored returns defaults, not an empty object
+  let res = await fetch(`${base}/api/settings/processing`);
+  const defaults = await res.json();
+  expect(defaults).toHaveProperty("exposure");
+  expect(defaults).toHaveProperty("saturation");
+
+  res = await fetch(`${base}/api/settings/processing`, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ ...defaults, exposure: 1.4 }),
+  });
+  expect((await res.json()).success).toBe(true);
+  res = await fetch(`${base}/api/settings/processing`);
+  expect((await res.json()).exposure).toBe(1.4);
+
+  // DELETE resets and returns the defaults object like the firmware
+  res = await fetch(`${base}/api/settings/processing`, { method: "DELETE" });
+  const reset = await res.json();
+  expect(reset).toHaveProperty("exposure");
+  expect(reset.exposure).not.toBe(1.4);
+});
+
+test("malformed JSON bodies return 400", async () => {
+  for (const p of ["/api/albums", "/api/delete", "/api/config"]) {
+    const res = await fetch(`${base}${p}`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: "{nope",
+    });
+    expect(res.status).toBe(400);
+  }
 });
 
 test("stub endpoints respond success", async () => {
