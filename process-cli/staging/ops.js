@@ -10,6 +10,8 @@ export function isSafeName(name) {
     name.length < 64 &&
     name !== "." &&
     name !== ".." &&
+    // names are used as plain-object keys; keep prototype setters out
+    !["__proto__", "constructor", "prototype"].includes(name) &&
     !name.includes("/") &&
     !name.includes("\\")
   );

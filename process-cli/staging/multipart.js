@@ -10,7 +10,9 @@
 export function parseMultipart(body, contentTypeHeader) {
   const m = /boundary=(?:"([^"]+)"|([^;]+))/i.exec(contentTypeHeader || "");
   if (!m) {
-    throw new Error("missing multipart boundary");
+    const err = new Error("missing multipart boundary");
+    err.statusCode = 400;
+    throw err;
   }
   const token = (m[1] || m[2]).trim();
   const first = Buffer.from(`--${token}`);

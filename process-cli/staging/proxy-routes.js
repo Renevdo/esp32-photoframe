@@ -12,6 +12,9 @@ import { isSafeName } from "./ops.js";
 
 const MAX_UPLOAD = 50 * 1024 * 1024;
 
+// Display-image formats the device understands (thumbnails are always .jpg)
+const IMAGE_EXTENSIONS = [".png", ".bmp", ".epdgz"];
+
 function success(res, extra = {}) {
   json(res, 200, { status: "success", ...extra });
 }
@@ -135,12 +138,13 @@ export async function proxyRoute(req, res, u, seg, opts) {
     const images = [];
     if (fs.existsSync(albumPath)) {
       const files = fs.readdirSync(albumPath).sort();
+      const fileSet = new Set(files);
       for (const f of files) {
         const ext = path.extname(f).toLowerCase();
-        if (![".png", ".bmp", ".epdgz"].includes(ext)) continue;
+        if (!IMAGE_EXTENSIONS.includes(ext)) continue;
         const entry = { filename: f, album };
-        const thumb = `${path.basename(f, ext)}.jpg`;
-        if (files.includes(thumb)) entry.thumbnail = thumb;
+        const thumb = `${path.basename(f, path.extname(f))}.jpg`;
+        if (fileSet.has(thumb)) entry.thumbnail = thumb;
         images.push(entry);
       }
     }
@@ -162,6 +166,14 @@ export async function proxyRoute(req, res, u, seg, opts) {
     if (!image || !thumbnail || !isSafeName(image.filename || "")) {
       json(res, 400, {
         error: "Upload incomplete - expected image and thumbnail",
+      });
+      return true;
+    }
+    if (
+      !IMAGE_EXTENSIONS.includes(path.extname(image.filename).toLowerCase())
+    ) {
+      json(res, 400, {
+        error: "Image must be .png, .bmp, or .epdgz",
       });
       return true;
     }
