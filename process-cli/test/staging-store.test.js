@@ -182,6 +182,40 @@ test("corrupt state.json is backed up and reset instead of crashing", () => {
   expect(fs.existsSync(`${s.statePath}.corrupt`)).toBe(true);
 });
 
+test("an ack beyond the latest seq cannot wipe the journal", () => {
+  const s = new StagingStore(dir);
+  s.init();
+  put(s, "fam", "a.epdgz", "data");
+  s.deploy(); // seq 1
+  put(s, "fam", "b.epdgz", "data");
+  s.deploy(); // seq 2
+
+  s.ack("BOGUS", 999); // a device cannot be further ahead than the server
+  expect(s.deviceStatus()).toEqual({ BOGUS: 2 });
+
+  put(s, "fam", "c.epdgz", "data");
+  s.deploy(); // seq 3
+
+  // An unclamped 999 would put the prune floor above seq 3 and drop it on
+  // sight, leaving a device at seq 2 with nothing to replay but a reset.
+  expect(s.changesSince(2)).toEqual({
+    latestSeq: 3,
+    ops: [{ op: "put", album: "fam", file: "c.epdgz", size: 4 }],
+  });
+});
+
+test("ack ignores values that are not real sequence numbers", () => {
+  const s = new StagingStore(dir);
+  s.init();
+  put(s, "fam", "a.epdgz", "data");
+  s.deploy(); // seq 1
+
+  s.ack("A", -5);
+  s.ack("B", 1.5);
+  s.ack("C", NaN);
+  expect(s.deviceStatus()).toEqual({});
+});
+
 test("ack records per-device seq", () => {
   const s = new StagingStore(dir);
   s.init();

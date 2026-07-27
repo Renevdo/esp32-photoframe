@@ -159,8 +159,14 @@ export class StagingStore {
     };
   }
 
+  // A device cannot be ahead of the server, and the acked seq sets the prune
+  // floor, so a bogus value here would drop journal entries other devices still
+  // need. Clamp to a real sequence number and ignore anything else.
   ack(deviceId, seq) {
-    this.state.devices[deviceId] = seq;
+    if (!Number.isInteger(seq) || seq < 0) {
+      return;
+    }
+    this.state.devices[deviceId] = Math.min(seq, this.latestSeq);
     this.#pruneAckedDeployments();
     this.saveState();
   }
