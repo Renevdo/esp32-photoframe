@@ -78,10 +78,13 @@ static int http_get_to_buffer(const char *url, char *buf, size_t buf_len)
     return status;
 }
 
+// Max on-SD path for a synced file: album path + '/' + validated file name.
+#define SYNC_FILE_PATH_LEN (256 + SYNC_NAME_MAX_LEN + 2)
+
 // Download url to path atomically (temp file + rename).
 static esp_err_t download_to_file(const char *url, const char *path)
 {
-    char tmp_path[320];
+    char tmp_path[SYNC_FILE_PATH_LEN + 8];
     snprintf(tmp_path, sizeof(tmp_path), "%s.tmp", path);
 
     FILE *f = fopen(tmp_path, "wb");
@@ -168,7 +171,7 @@ static esp_err_t apply_put(const char *base_url, const sync_op_t *op)
         album_created = true;
     }
 
-    char file_path[300];
+    char file_path[SYNC_FILE_PATH_LEN];
     snprintf(file_path, sizeof(file_path), "%s/%s", album_path, op->file);
 
     // Resume optimization: skip files already present with the expected size
@@ -207,7 +210,7 @@ static esp_err_t apply_op(const char *base_url, const sync_op_t *op)
         if (album_manager_get_album_path(op->album, album_path, sizeof(album_path)) != ESP_OK) {
             return ESP_FAIL;
         }
-        char file_path[300];
+        char file_path[SYNC_FILE_PATH_LEN];
         snprintf(file_path, sizeof(file_path), "%s/%s", album_path, op->file);
         if (unlink(file_path) != 0) {
             ESP_LOGW(TAG, "Delete %s: already gone", file_path);
