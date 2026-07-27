@@ -65,8 +65,8 @@ static bool is_path_safe(const char *path)
     return true;
 }
 
-// Webapp assets are embedded gzipped (see webapp/build/gzip-assets.js) and
-// served with Content-Encoding: gzip. The sample JPEG is embedded raw.
+// Webapp assets are embedded gzipped (see webapp/vite-plugins/gzip-assets.js)
+// and served with Content-Encoding: gzip. The sample JPEG is embedded raw.
 extern const uint8_t index_html_start[] asm("_binary_index_html_gz_start");
 extern const uint8_t index_html_end[] asm("_binary_index_html_gz_end");
 extern const uint8_t index_css_start[] asm("_binary_index_css_gz_start");
