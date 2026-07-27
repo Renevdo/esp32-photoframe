@@ -8,7 +8,7 @@ export default defineConfig({
   plugins: [
     vue(),
     vuetify({ autoImport: true }),
-    // Must come last: it replaces the emitted files with .gz.
+    // Must come last: it writes a .gz beside each emitted file.
     gzipAssets(),
   ],
   build: {

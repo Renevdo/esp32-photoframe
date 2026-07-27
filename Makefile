@@ -84,7 +84,7 @@ test:
 	@./host_tests/build/sync_ops_test
 	@echo ""
 	@echo "Running image orientation tests..."
-	@npm install --silent
+	@[ -d node_modules ] || npm ci
 	@npm run test:orientation --workspace=process-cli
 	@echo ""
 	@echo "✓ All tests passed!"

@@ -213,7 +213,7 @@ jobs:
         cp webapp/public/icon.svg demo/
 
         # Generate the dithered hero preview from taipei101.jpg
-        npx epaper-image-convert \
+        npx --no-install epaper-image-convert \
           -d 800x480 -f png -p balanced \
           --orientation landscape --scale-mode cover \
           --use-perceived-output --dither-algorithm stucki \
