@@ -18,8 +18,11 @@ def build_webapp():
     print("\n=== Building webapp ===")
     root = os.path.dirname(os.path.abspath(__file__))
     try:
-        # Single install for the whole workspace (webapp + process-cli).
-        subprocess.run("npm install", shell=True, check=True, cwd=root)
+        # One install for the whole workspace (webapp + process-cli). npm ci so
+        # the committed lockfile is authoritative, and only when the tree is
+        # missing so repeat local builds stay fast.
+        if not os.path.isdir(os.path.join(root, "node_modules")):
+            subprocess.run("npm ci", shell=True, check=True, cwd=root)
         subprocess.run(
             "npm run build --workspace=webapp", shell=True, check=True, cwd=root
         )
