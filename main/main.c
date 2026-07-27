@@ -40,6 +40,7 @@
 #include "processing_settings.h"
 #include "splash_screen.h"
 #include "storage.h"
+#include "sync_client.h"
 #include "utils.h"
 #include "wifi_manager.h"
 #include "wifi_provisioning.h"
@@ -285,10 +286,14 @@ void deep_sleep_wake_main(wakeup_source_t wakeup_src)
         // Won't reach here after sleep
     }
 
-    // Initialize WiFi if needed (URL mode always needs it, SD card mode only if HA configured)
-    if (rotation_mode == ROTATION_MODE_URL || ha_configured) {
+    // Initialize WiFi if needed (URL mode and album sync always need it, SD
+    // card mode only if HA configured)
+    bool sync_configured = sync_client_is_configured();
+    if (rotation_mode == ROTATION_MODE_URL || ha_configured || sync_configured) {
         ESP_LOGI(TAG, "Initializing WiFi for %s",
-                 rotation_mode == ROTATION_MODE_URL ? "URL rotation" : "HA battery post");
+                 rotation_mode == ROTATION_MODE_URL ? "URL rotation"
+                 : sync_configured                  ? "album sync"
+                                                    : "HA battery post");
         ESP_ERROR_CHECK(wifi_manager_init());
 
         if (connect_to_wifi_with_timeout(60)) {
@@ -347,6 +352,13 @@ void deep_sleep_wake_main(wakeup_source_t wakeup_src)
         ESP_LOGI(TAG, "Rotation skipped by Home Assistant, going back to sleep");
         power_manager_enter_sleep();
         // Won't reach here after sleep
+    }
+
+    // Pull deployed album changes from the staging server before rotating so
+    // a freshly deployed album can be shown on this wake already.
+    if (wifi_connected && sync_configured) {
+        power_manager_reset_sleep_timer();
+        sync_client_run();
     }
 
     // Trigger rotation
