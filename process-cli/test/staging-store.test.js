@@ -48,18 +48,26 @@ test("changesSince coalesces across deployments and persists across reload", () 
   fs.unlinkSync(path.join(s.albumsDir, "fam", "a.epdgz"));
   put(s, "fam", "b.epdgz", "other!");
   s.deploy(); // seq 2
+  put(s, "fam", "b.epdgz", "re-edited"); // same file again, new size
+  put(s, "fam", "c.epdgz", "third");
+  s.deploy(); // seq 3
 
+  // since=1 spans seq 2 and seq 3, and b.epdgz was put in both. Coalescing has
+  // to collapse those into one put at the latest size; plain concatenation
+  // would yield four ops with b.epdgz twice.
   const s2 = new StagingStore(dir);
   s2.init();
   const { latestSeq, ops } = s2.changesSince(1);
-  expect(latestSeq).toBe(2);
+  expect(latestSeq).toBe(3);
+  expect(ops).toHaveLength(3);
   expect(ops).toEqual(
     expect.arrayContaining([
       { op: "delete", album: "fam", file: "a.epdgz" },
-      { op: "put", album: "fam", file: "b.epdgz", size: 6 },
+      { op: "put", album: "fam", file: "b.epdgz", size: 9 },
+      { op: "put", album: "fam", file: "c.epdgz", size: 5 },
     ]),
   );
-  expect(s2.changesSince(2)).toEqual({ latestSeq: 2, ops: [] });
+  expect(s2.changesSince(3)).toEqual({ latestSeq: 3, ops: [] });
 });
 
 test("state.json keeps one manifest, not one per deployment", () => {
