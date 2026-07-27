@@ -4,6 +4,7 @@ sdkconfig.old
 partitions.csv
 *.pyc
 .DS_Store
+Photos/
 dependencies.lock
 managed_components/
 .cache
