@@ -18,16 +18,22 @@ function json(res, code, obj) {
   res.end(body);
 }
 
+// Stream the file so large epdgz downloads neither block the event loop nor
+// buffer whole files in memory.
 function sendFile(res, filePath, contentType) {
-  if (!fs.existsSync(filePath)) {
+  let size;
+  try {
+    size = fs.statSync(filePath).size;
+  } catch {
     return json(res, 404, { error: "not found" });
   }
-  const data = fs.readFileSync(filePath);
   res.writeHead(200, {
     "content-type": contentType,
-    "content-length": data.length,
+    "content-length": size,
   });
-  res.end(data);
+  fs.createReadStream(filePath)
+    .on("error", () => res.destroy())
+    .pipe(res);
 }
 
 function collectBody(req, cap) {
@@ -37,8 +43,14 @@ function collectBody(req, cap) {
     req.on("data", (c) => {
       total += c.length;
       if (total > cap) {
-        reject(new Error("body too large"));
-        req.destroy();
+        const err = new Error("body too large");
+        err.statusCode = 413;
+        // Stop consuming but keep the socket alive so the 413 response can
+        // still be delivered; the connection closes after the response.
+        req.removeAllListeners("data");
+        req.removeAllListeners("end");
+        req.pause();
+        reject(err);
         return;
       }
       chunks.push(c);
@@ -46,6 +58,16 @@ function collectBody(req, cap) {
     req.on("end", () => resolve(Buffer.concat(chunks)));
     req.on("error", reject);
   });
+}
+
+function parseJsonBody(buffer) {
+  try {
+    return JSON.parse(buffer.toString());
+  } catch {
+    const err = new Error("invalid JSON body");
+    err.statusCode = 400;
+    throw err;
+  }
 }
 
 function listAlbums(store) {
@@ -72,7 +94,12 @@ export function createStagingServer(store, ctx, options = {}) {
       const seg = u.pathname.split("/").filter(Boolean).map(decodeURIComponent);
       await route(req, res, u, seg);
     } catch (err) {
-      json(res, err.statusCode || 500, { error: err.message });
+      if (!res.headersSent) {
+        res.setHeader("connection", "close");
+        json(res, err.statusCode || 500, { error: err.message });
+      } else {
+        res.destroy();
+      }
     }
   });
 
@@ -109,8 +136,12 @@ export function createStagingServer(store, ctx, options = {}) {
     }
 
     if (req.method === "POST" && seg.join("/") === "api/sync/ack") {
-      const body = JSON.parse((await collectBody(req, 4096)).toString());
-      if (typeof body.device !== "string" || typeof body.seq !== "number") {
+      const body = parseJsonBody(await collectBody(req, 4096));
+      if (
+        !isSafeName(body.device) ||
+        !Number.isInteger(body.seq) ||
+        body.seq < 0
+      ) {
         return json(res, 400, { error: "device and seq required" });
       }
       store.ack(body.device, body.seq);

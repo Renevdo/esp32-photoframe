@@ -22,6 +22,24 @@ bool sync_name_is_safe(const char *name)
     return true;
 }
 
+// JSON numbers are doubles; accept only exact non-negative integers within
+// [0, max] so a malformed or hostile response cannot overflow or truncate.
+// 2^53 - 1 is the largest integer a JSON double represents exactly.
+#define JSON_MAX_SAFE_INTEGER 9007199254740991LL
+
+static bool json_number_to_i64(const cJSON *item, int64_t max, int64_t *out)
+{
+    if (!cJSON_IsNumber(item)) {
+        return false;
+    }
+    double v = item->valuedouble;
+    if (v < 0 || v > (double) max || v != (double) (int64_t) v) {
+        return false;
+    }
+    *out = (int64_t) v;
+    return true;
+}
+
 static bool copy_name(char *dst, const cJSON *item)
 {
     if (!cJSON_IsString(item) || !sync_name_is_safe(item->valuestring)) {
@@ -50,10 +68,9 @@ bool sync_ops_parse(const char *json, sync_changes_t *out)
     }
 
     cJSON *seq = cJSON_GetObjectItem(root, "latest_seq");
-    if (!cJSON_IsNumber(seq)) {
+    if (!json_number_to_i64(seq, JSON_MAX_SAFE_INTEGER, &out->latest_seq)) {
         goto done;
     }
-    out->latest_seq = (int64_t) seq->valuedouble;
 
     cJSON *ops = cJSON_GetObjectItem(root, "ops");
     if (!cJSON_IsArray(ops)) {
@@ -93,10 +110,11 @@ bool sync_ops_parse(const char *json, sync_changes_t *out)
         }
         if (op->type == SYNC_OP_PUT) {
             cJSON *size = cJSON_GetObjectItem(op_json, "size");
-            if (!cJSON_IsNumber(size) || size->valuedouble < 0) {
+            int64_t size_val;
+            if (!json_number_to_i64(size, INT32_MAX, &size_val)) {
                 goto done;
             }
-            op->size = (int32_t) size->valuedouble;
+            op->size = (int32_t) size_val;
         }
         out->op_count++;
     }

@@ -80,6 +80,45 @@ test("path traversal is rejected", async () => {
   expect(res.status).toBe(400);
 });
 
+test("client errors map to 4xx, not 500", async () => {
+  // malformed ack JSON
+  let res = await fetch(`${base}/api/sync/ack`, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: "{not json",
+  });
+  expect(res.status).toBe(400);
+
+  // invalid device id / non-integer seq
+  for (const body of [
+    { device: "../evil", seq: 1 },
+    { device: "OK", seq: 1.5 },
+    { device: "OK", seq: -1 },
+  ]) {
+    res = await fetch(`${base}/api/sync/ack`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify(body),
+    });
+    expect(res.status).toBe(400);
+  }
+
+  // oversized body hits the cap as 413
+  res = await fetch(`${base}/api/sync/ack`, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: `{"device":"OK","seq":1,"pad":"${"x".repeat(8192)}"}`,
+  });
+  expect(res.status).toBe(413);
+
+  // unsafe upload album name is a 400 from intake
+  res = await fetch(`${base}/api/staging/photos/..%2Fevil/pic.png`, {
+    method: "PUT",
+    body: "data",
+  });
+  expect(res.status).toBe(400);
+});
+
 test("albums list and photo delete", async () => {
   await fetch(`${base}/api/staging/photos/fam/pic.png`, {
     method: "PUT",
