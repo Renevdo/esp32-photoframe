@@ -55,6 +55,8 @@ export const useSettingsStore = defineStore("settings", () => {
     httpHeaderKey: "",
     httpHeaderValue: "",
     saveDownloadedImages: true,
+    // Offline Album Sync
+    syncServerUrl: "",
     // Home Assistant
     haUrl: "",
     // Power
@@ -212,6 +214,7 @@ export const useSettingsStore = defineStore("settings", () => {
       deviceSettings.value.deepSleepEnabled = data.deep_sleep_enabled !== false;
       deviceSettings.value.debugLogEnabled = data.debug_log_enabled === true;
       deviceSettings.value.haUrl = data.ha_url || "";
+      deviceSettings.value.syncServerUrl = data.sync_server_url || "";
       deviceSettings.value.saveDownloadedImages = data.save_downloaded_images !== false;
       deviceSettings.value.accessToken = data.access_token || "";
       // The HTTP API password is never echoed back; keep the input blank and
@@ -280,6 +283,7 @@ export const useSettingsStore = defineStore("settings", () => {
       rotation_mode: deviceSettings.value.rotationMode,
       sd_rotation_mode: deviceSettings.value.sdRotationMode,
       image_url: deviceSettings.value.imageUrl,
+      sync_server_url: deviceSettings.value.syncServerUrl,
       ha_url: deviceSettings.value.haUrl,
       deep_sleep_enabled: deviceSettings.value.deepSleepEnabled,
       debug_log_enabled: deviceSettings.value.debugLogEnabled,
