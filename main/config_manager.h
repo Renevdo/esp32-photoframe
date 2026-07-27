@@ -143,6 +143,15 @@ void config_manager_set_debug_log_enabled(bool enabled);
 bool config_manager_get_debug_log_enabled(void);
 
 // ============================================================================
+// Offline Album Sync
+// ============================================================================
+
+// Base URL of the local staging server (see docs/OFFLINE_ALBUM_SYNC.md).
+// Empty string disables deploy-on-wake sync.
+void config_manager_set_sync_server_url(const char *url);
+const char *config_manager_get_sync_server_url(void);
+
+// ============================================================================
 // Config Sync
 // ============================================================================
 

@@ -1691,6 +1691,9 @@ static esp_err_t config_handler(httpd_req_t *req)
         const char *image_url = config_manager_get_image_url();
         cJSON_AddStringToObject(root, "image_url", image_url ? image_url : "");
 
+        // Offline Album Sync
+        cJSON_AddStringToObject(root, "sync_server_url", config_manager_get_sync_server_url());
+
         size_t ca_cert_len = 0;
         config_manager_get_ca_cert_der(&ca_cert_len);
         cJSON_AddBoolToObject(root, "ca_cert_set", ca_cert_len > 0);

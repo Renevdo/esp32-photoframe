@@ -424,6 +424,12 @@ esp_err_t apply_config_from_json(cJSON *root)
         config_manager_set_save_downloaded_images(cJSON_IsTrue(item));
     }
 
+    // Offline Album Sync
+    item = cJSON_GetObjectItem(root, "sync_server_url");
+    if (item && cJSON_IsString(item)) {
+        config_manager_set_sync_server_url(cJSON_GetStringValue(item));
+    }
+
     // Home Assistant
     item = cJSON_GetObjectItem(root, "ha_url");
     if (item && cJSON_IsString(item)) {
