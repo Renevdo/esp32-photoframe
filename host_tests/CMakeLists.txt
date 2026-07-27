@@ -16,6 +16,17 @@ FetchContent_Declare(
 set(gtest_force_shared_crt ON CACHE BOOL "" FORCE)
 FetchContent_MakeAvailable(googletest)
 
+# Fetch cJSON (used by the sync-ops parser; the firmware gets it from ESP-IDF)
+FetchContent_Declare(
+  cjson
+  GIT_REPOSITORY https://github.com/DaveGamble/cJSON.git
+  GIT_TAG v1.7.18
+)
+set(ENABLE_CJSON_TEST OFF CACHE BOOL "" FORCE)
+set(BUILD_SHARED_AND_STATIC_LIBS OFF CACHE BOOL "" FORCE)
+set(BUILD_SHARED_LIBS OFF CACHE BOOL "" FORCE)
+FetchContent_MakeAvailable(cjson)
+
 # Enable testing
 enable_testing()
 
@@ -57,7 +68,29 @@ target_include_directories(
   ${CMAKE_CURRENT_SOURCE_DIR}/../main
 )
 
+# Sync ops parser tests (deploy-on-wake album sync)
+add_executable(
+  sync_ops_test
+  test_sync_ops.cpp
+  ../main/sync_ops.c
+)
+
+target_link_libraries(
+  sync_ops_test
+  GTest::gtest_main
+  cjson
+)
+
+target_include_directories(
+  sync_ops_test
+  PRIVATE
+  ${CMAKE_CURRENT_SOURCE_DIR}
+  ${CMAKE_CURRENT_SOURCE_DIR}/../main
+  ${cjson_SOURCE_DIR}
+)
+
 # Discover tests
 include(GoogleTest)
 gtest_discover_tests(cron_test)
 gtest_discover_tests(wake_schedule_test)
+gtest_discover_tests(sync_ops_test)
