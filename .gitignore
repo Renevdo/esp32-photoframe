@@ -23,7 +23,7 @@ esp32-photoframe
 demo/sample.jpg
 demo/taipei101.jpg
 demo/taipei101_dithered.png
-demo/stock_algorithm.bmp
+demo/stock_algorithm.png
 demo/our_algorithm.png
 demo/feature_graphic.png
 demo/icon.svg

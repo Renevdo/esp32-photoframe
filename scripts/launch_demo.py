@@ -218,7 +218,7 @@ def copy_required_files(demo_dir, project_root):
     assets = [
         (project_root / ".img" / "sample.jpg", "sample.jpg"),
         (project_root / ".img" / "taipei101.jpg", "taipei101.jpg"),
-        (project_root / ".img" / "stock_algorithm.bmp", "stock_algorithm.bmp"),
+        (project_root / ".img" / "stock_algorithm.png", "stock_algorithm.png"),
         (project_root / ".img" / "our_algorithm.png", "our_algorithm.png"),
         (project_root / ".img" / "feature_graphic.png", "feature_graphic.png"),
         (project_root / "webapp" / "public" / "icon.svg", "icon.svg"),
