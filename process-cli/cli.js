@@ -896,8 +896,14 @@ program
         orientation: "landscape",
       };
       if (fs.existsSync(cachePath)) {
-        ctx = { ...ctx, ...JSON.parse(fs.readFileSync(cachePath, "utf8")) };
-        console.log("Loaded cached device parameters");
+        try {
+          ctx = { ...ctx, ...JSON.parse(fs.readFileSync(cachePath, "utf8")) };
+          console.log("Loaded cached device parameters");
+        } catch {
+          console.log(
+            `Warning: ${cachePath} is corrupt, ignoring cached parameters`,
+          );
+        }
       }
       if (options.deviceParameters) {
         try {
