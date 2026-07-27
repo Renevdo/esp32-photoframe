@@ -172,6 +172,29 @@ test("processing settings mirror the device contract", async () => {
   expect(reset.exposure).not.toBe(1.4);
 });
 
+test("upload rejects non-display image extensions", async () => {
+  const body = multipartBody(
+    "APPBOUND",
+    { name: "shot.gif", data: pngBuffer() },
+    { name: "shot.jpg", data: Buffer.from("fakejpeg") },
+  );
+  const res = await fetch(`${base}/api/upload?album=FromApp`, {
+    method: "POST",
+    headers: { "content-type": "multipart/form-data; boundary=APPBOUND" },
+    body,
+  });
+  expect(res.status).toBe(400);
+});
+
+test("missing multipart boundary returns 400", async () => {
+  const res = await fetch(`${base}/api/upload?album=FromApp`, {
+    method: "POST",
+    headers: { "content-type": "application/octet-stream" },
+    body: "data",
+  });
+  expect(res.status).toBe(400);
+});
+
 test("malformed JSON bodies return 400", async () => {
   for (const p of ["/api/albums", "/api/delete", "/api/config"]) {
     const res = await fetch(`${base}${p}`, {
