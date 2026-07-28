@@ -73,3 +73,55 @@ test("battery returns full synthetic charge", () => {
     battery_connected: false,
   });
 });
+
+function addPhoto(store, album, base, bytes = 100) {
+  const dir = path.join(store.albumsDir, album);
+  fs.mkdirSync(dir, { recursive: true });
+  fs.writeFileSync(path.join(dir, `${base}.epdgz`), "x".repeat(bytes));
+  fs.writeFileSync(path.join(dir, `${base}.jpg`), "y".repeat(bytes));
+}
+
+test("repeated system-info polls do not rescan the store every time", () => {
+  addPhoto(store, "fam", "a");
+  const v = new VirtualDevice(store, {});
+
+  const real = fs.readdirSync;
+  let scans = 0;
+  fs.readdirSync = (...args) => {
+    scans++;
+    return real(...args);
+  };
+  try {
+    v.systemInfo();
+    const afterFirst = scans;
+    v.systemInfo();
+    v.systemInfo();
+    expect(scans).toBe(afterFirst); // served from cache
+  } finally {
+    fs.readdirSync = real;
+  }
+});
+
+test("storage_used still reflects the store once the cache window passes", () => {
+  addPhoto(store, "fam", "a", 100);
+  const v = new VirtualDevice(store, { cacheMs: 0 });
+  const before = v.systemInfo().storage_used;
+
+  addPhoto(store, "fam", "b", 250);
+  expect(v.systemInfo().storage_used).toBe(before + 500);
+});
+
+test("deploy still sees writes immediately, cache or not", () => {
+  const v = new VirtualDevice(store, {});
+  addPhoto(store, "fam", "a");
+  v.systemInfo(); // warm the cache
+
+  addPhoto(store, "fam", "b");
+  // deploy must never be served stale data
+  expect(
+    store
+      .deploy()
+      .ops.map((o) => o.file)
+      .sort(),
+  ).toEqual(["a.epdgz", "a.jpg", "b.epdgz", "b.jpg"]);
+});

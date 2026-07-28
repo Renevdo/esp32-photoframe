@@ -208,6 +208,23 @@ def build_demo_webapp(project_root):
         return False
 
 
+def find_convert_cli(project_root):
+    """Locate the epaper-image-convert CLI.
+
+    Workspaces hoist it to the repo root, but a standalone install in webapp/
+    still works, so check both instead of assuming a layout.
+    """
+    rel = Path("@aitjcize") / "epaper-image-convert" / "src" / "cli.js"
+    for base in (
+        project_root / "node_modules",
+        project_root / "webapp" / "node_modules",
+    ):
+        candidate = base / rel
+        if candidate.exists():
+            return candidate
+    return None
+
+
 def copy_required_files(demo_dir, project_root):
     """Copy required files for the demo page."""
 
@@ -218,7 +235,7 @@ def copy_required_files(demo_dir, project_root):
     assets = [
         (project_root / ".img" / "sample.jpg", "sample.jpg"),
         (project_root / ".img" / "taipei101.jpg", "taipei101.jpg"),
-        (project_root / ".img" / "stock_algorithm.bmp", "stock_algorithm.bmp"),
+        (project_root / ".img" / "stock_algorithm.png", "stock_algorithm.png"),
         (project_root / ".img" / "our_algorithm.png", "our_algorithm.png"),
         (project_root / ".img" / "feature_graphic.png", "feature_graphic.png"),
         (project_root / "webapp" / "public" / "icon.svg", "icon.svg"),
@@ -235,16 +252,8 @@ def copy_required_files(demo_dir, project_root):
     # Generate the dithered hero image (preview-mode PNG) from taipei101.jpg.
     src_hero = project_root / ".img" / "taipei101.jpg"
     dst_hero = demo_dir / "taipei101_dithered.png"
-    cli = (
-        project_root
-        / "webapp"
-        / "node_modules"
-        / "@aitjcize"
-        / "epaper-image-convert"
-        / "src"
-        / "cli.js"
-    )
-    if src_hero.exists() and cli.exists():
+    cli = find_convert_cli(project_root)
+    if src_hero.exists() and cli is not None:
         try:
             subprocess.run(
                 [
@@ -276,9 +285,11 @@ def copy_required_files(demo_dir, project_root):
             print(f"  ⚠ Warning: Could not generate {dst_hero.name}: {e}")
             if e.stderr:
                 print(f"    {e.stderr.strip()}")
-    else:
-        if not cli.exists():
-            print(f"  ⚠ Warning: epaper-image-convert CLI not found at {cli}")
+    elif cli is None:
+        print(
+            "  ⚠ Warning: epaper-image-convert CLI not found "
+            "(run 'npm ci' in the repo root)"
+        )
 
 
 def generate_manifests(project_root, boards=None):

@@ -377,7 +377,7 @@ function scrollTo(id) {
           </figure>
           <figure class="compare-side">
             <div class="compare-img">
-              <img :src="`${baseUrl}stock_algorithm.bmp`" alt="Stock firmware output on device" />
+              <img :src="`${baseUrl}stock_algorithm.png`" alt="Stock firmware output on device" />
             </div>
             <figcaption>
               <span class="compare-label">Stock</span>

@@ -212,3 +212,67 @@ test("stub endpoints respond success", async () => {
     expect(res.status).toBe(200);
   }
 });
+
+test("album flags are replaced atomically, never rewritten in place", async () => {
+  fs.mkdirSync(path.join(store.albumsDir, "fam"), { recursive: true });
+  fs.mkdirSync(path.join(store.albumsDir, "trip"), { recursive: true });
+
+  const setEnabled = (name, enabled) =>
+    fetch(`${base}/api/albums/enabled?name=${name}`, {
+      method: "PUT",
+      body: JSON.stringify({ enabled }),
+    });
+
+  expect((await setEnabled("fam", false)).status).toBe(200);
+
+  const flagsPath = path.join(store.storeDir, "proxy-albums.json");
+  const before = fs.readFileSync(flagsPath, "utf8");
+
+  // A reader holding the file open across the next write must still see the
+  // whole previous document. Truncate-and-rewrite exposes it to the new bytes,
+  // and to a half-written file if the process dies mid-write; tmp+rename
+  // cannot, because the old inode is never touched.
+  const fd = fs.openSync(flagsPath, "r");
+  try {
+    expect((await setEnabled("trip", false)).status).toBe(200);
+    const buf = Buffer.alloc(before.length * 4);
+    const read = fs.readSync(fd, buf, 0, buf.length, 0);
+    expect(buf.subarray(0, read).toString()).toBe(before);
+  } finally {
+    fs.closeSync(fd);
+  }
+
+  expect(JSON.parse(fs.readFileSync(flagsPath, "utf8"))).toEqual({
+    fam: false,
+    trip: false,
+  });
+});
+
+test("current_image follows the latest upload without waiting for the cache", async () => {
+  const upload = async (name, thumbBytes) => {
+    const body = multipartBody(
+      "APPBOUND",
+      { name, data: pngBuffer() },
+      { name: name.replace(".png", ".jpg"), data: Buffer.from(thumbBytes) },
+    );
+    const res = await fetch(`${base}/api/upload?album=FromApp`, {
+      method: "POST",
+      headers: { "content-type": "multipart/form-data; boundary=APPBOUND" },
+      body,
+    });
+    expect(res.status).toBe(200);
+  };
+
+  await upload("first.png", "FIRSTJPEG");
+  // warm the current_image cache before the next upload
+  expect(await (await fetch(`${base}/api/current_image`)).text()).toBe(
+    "FIRSTJPEG",
+  );
+
+  await upload("second.png", "SECONDJPEG");
+  // the app asks again straight after uploading; a cached answer would show
+  // the previous photo
+  expect(await (await fetch(`${base}/api/current_image`)).text()).toBe(
+    "SECONDJPEG",
+  );
+});

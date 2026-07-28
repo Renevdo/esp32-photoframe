@@ -39,10 +39,10 @@ format:
 		python3 -m black $(PY_FILES); \
 		echo "Done! Formatted $(words $(PY_FILES)) Python files."; \
 	fi
-	@cd webapp && npm run format
+	@npm run format --workspace=webapp
 	@echo "Done! Formatted webapp files."
 	@echo "Formatting process-cli JS files..."
-	@cd process-cli && npm run format
+	@npm run format --workspace=process-cli
 	@echo "Done! Formatted process-cli files."
 
 format-check:
@@ -53,12 +53,11 @@ format-check:
 		python3 -m isort --check-only $(PY_FILES); \
 		python3 -m black --check $(PY_FILES); \
 	fi
+	@[ -d node_modules ] || npm ci
 	@echo "Checking webapp Vue files formatting..."
-	@cd webapp && [ -d node_modules ] || npm ci
-	@cd webapp && npm run format:check
+	@npm run format:check --workspace=webapp
 	@echo "Checking process-cli JS files formatting..."
-	@cd process-cli && [ -d node_modules ] || npm ci
-	@cd process-cli && npm run format:check
+	@npm run format:check --workspace=process-cli
 	@echo "All files are properly formatted!"
 
 format-diff:
@@ -85,6 +84,7 @@ test:
 	@./host_tests/build/sync_ops_test
 	@echo ""
 	@echo "Running image orientation tests..."
-	@cd process-cli && npm install --silent && npm run test:orientation
+	@[ -d node_modules ] || npm ci
+	@npm run test:orientation --workspace=process-cli
 	@echo ""
 	@echo "✓ All tests passed!"

@@ -17,6 +17,7 @@
 #include "nvs_flash.h"
 #include "power_manager.h"
 #include "utils.h"
+#include "webapp_assets.h"
 #include "wifi_manager.h"
 
 static const char *TAG = "wifi_prov";
@@ -28,25 +29,7 @@ typedef struct {
     char password[WIFI_PASS_MAX_LEN];
 } wifi_test_params_t;
 
-// Webapp assets - same as http_server.c
-extern const uint8_t index_html_start[] asm("_binary_index_html_start");
-extern const uint8_t index_html_end[] asm("_binary_index_html_end");
-extern const uint8_t index_css_start[] asm("_binary_index_css_start");
-extern const uint8_t index_css_end[] asm("_binary_index_css_end");
-extern const uint8_t index_js_start[] asm("_binary_index_js_start");
-extern const uint8_t index_js_end[] asm("_binary_index_js_end");
-extern const uint8_t index2_js_start[] asm("_binary_index2_js_start");
-extern const uint8_t index2_js_end[] asm("_binary_index2_js_end");
-extern const uint8_t exif_reader_js_start[] asm("_binary_exif_reader_js_start");
-extern const uint8_t exif_reader_js_end[] asm("_binary_exif_reader_js_end");
-extern const uint8_t browser_js_start[] asm("_binary_browser_js_start");
-extern const uint8_t browser_js_end[] asm("_binary_browser_js_end");
-extern const uint8_t vite_browser_external_js_start[] asm(
-    "_binary___vite_browser_external_js_start");
-extern const uint8_t vite_browser_external_js_end[] asm("_binary___vite_browser_external_js_end");
-extern const uint8_t icon_svg_start[] asm("_binary_icon_svg_start");
-extern const uint8_t icon_svg_end[] asm("_binary_icon_svg_end");
-
+// Webapp assets come from webapp_assets.h, shared with http_server.c.
 static esp_err_t provision_keep_alive_handler(httpd_req_t *req)
 {
     power_manager_reset_sleep_timer();
@@ -65,66 +48,44 @@ static esp_err_t provision_index_handler(httpd_req_t *req)
         return ESP_OK;
     }
 
-    const size_t index_html_size = (index_html_end - index_html_start);
-    httpd_resp_set_type(req, "text/html");
-    httpd_resp_send(req, (const char *) index_html_start, index_html_size);
-    return ESP_OK;
+    return webapp_send_asset(req, "text/html", index_html_start, index_html_end);
 }
 
 static esp_err_t provision_css_handler(httpd_req_t *req)
 {
-    const size_t index_css_size = (index_css_end - index_css_start);
-    httpd_resp_set_type(req, "text/css");
-    httpd_resp_send(req, (const char *) index_css_start, index_css_size);
-    return ESP_OK;
+    return webapp_send_asset(req, "text/css", index_css_start, index_css_end);
 }
 
 static esp_err_t provision_js_handler(httpd_req_t *req)
 {
-    const size_t index_js_size = (index_js_end - index_js_start);
-    httpd_resp_set_type(req, "application/javascript");
-    httpd_resp_send(req, (const char *) index_js_start, index_js_size);
-    return ESP_OK;
+    return webapp_send_asset(req, "application/javascript", index_js_start, index_js_end);
 }
 
 static esp_err_t provision_js2_handler(httpd_req_t *req)
 {
-    const size_t index2_js_size = (index2_js_end - index2_js_start);
-    httpd_resp_set_type(req, "application/javascript");
-    httpd_resp_send(req, (const char *) index2_js_start, index2_js_size);
-    return ESP_OK;
+    return webapp_send_asset(req, "application/javascript", index2_js_start, index2_js_end);
 }
 
 static esp_err_t provision_exif_js_handler(httpd_req_t *req)
 {
-    const size_t exif_reader_js_size = (exif_reader_js_end - exif_reader_js_start);
-    httpd_resp_set_type(req, "application/javascript");
-    httpd_resp_send(req, (const char *) exif_reader_js_start, exif_reader_js_size);
-    return ESP_OK;
+    return webapp_send_asset(req, "application/javascript", exif_reader_js_start,
+                             exif_reader_js_end);
 }
 
 static esp_err_t provision_browser_js_handler(httpd_req_t *req)
 {
-    const size_t browser_js_size = (browser_js_end - browser_js_start);
-    httpd_resp_set_type(req, "application/javascript");
-    httpd_resp_send(req, (const char *) browser_js_start, browser_js_size);
-    return ESP_OK;
+    return webapp_send_asset(req, "application/javascript", browser_js_start, browser_js_end);
 }
 
 static esp_err_t provision_vite_js_handler(httpd_req_t *req)
 {
-    const size_t vite_js_size = (vite_browser_external_js_end - vite_browser_external_js_start);
-    httpd_resp_set_type(req, "application/javascript");
-    httpd_resp_send(req, (const char *) vite_browser_external_js_start, vite_js_size);
-    return ESP_OK;
+    return webapp_send_asset(req, "application/javascript", vite_browser_external_js_start,
+                             vite_browser_external_js_end);
 }
 
 static esp_err_t provision_icon_handler(httpd_req_t *req)
 {
-    const size_t icon_svg_size = (icon_svg_end - icon_svg_start);
-    httpd_resp_set_type(req, "image/svg+xml");
-    httpd_resp_send(req, (const char *) icon_svg_start, icon_svg_size);
-    return ESP_OK;
+    return webapp_send_asset(req, "image/svg+xml", icon_svg_start, icon_svg_end);
 }
 
 // Handler for captive portal detection URLs

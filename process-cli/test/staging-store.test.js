@@ -48,18 +48,122 @@ test("changesSince coalesces across deployments and persists across reload", () 
   fs.unlinkSync(path.join(s.albumsDir, "fam", "a.epdgz"));
   put(s, "fam", "b.epdgz", "other!");
   s.deploy(); // seq 2
+  put(s, "fam", "b.epdgz", "re-edited"); // same file again, new size
+  put(s, "fam", "c.epdgz", "third");
+  s.deploy(); // seq 3
 
+  // since=1 spans seq 2 and seq 3, and b.epdgz was put in both. Coalescing has
+  // to collapse those into one put at the latest size; plain concatenation
+  // would yield four ops with b.epdgz twice.
   const s2 = new StagingStore(dir);
   s2.init();
-  const { latestSeq, ops } = s2.changesSince(0);
-  expect(latestSeq).toBe(2);
+  const { latestSeq, ops } = s2.changesSince(1);
+  expect(latestSeq).toBe(3);
+  expect(ops).toHaveLength(3);
   expect(ops).toEqual(
     expect.arrayContaining([
       { op: "delete", album: "fam", file: "a.epdgz" },
-      { op: "put", album: "fam", file: "b.epdgz", size: 6 },
+      { op: "put", album: "fam", file: "b.epdgz", size: 9 },
+      { op: "put", album: "fam", file: "c.epdgz", size: 5 },
     ]),
   );
-  expect(s2.changesSince(2)).toEqual({ latestSeq: 2, ops: [] });
+  expect(s2.changesSince(3)).toEqual({ latestSeq: 3, ops: [] });
+});
+
+test("state.json keeps one manifest, not one per deployment", () => {
+  const s = new StagingStore(dir);
+  s.init();
+  for (let i = 1; i <= 30; i++) {
+    put(s, "fam", `p${i}.epdgz`, "data");
+    put(s, "fam", `p${i}.jpg`, "thumb");
+    s.deploy();
+  }
+  const raw = fs.readFileSync(s.statePath, "utf8");
+  const state = JSON.parse(raw);
+
+  expect(state.deployments.every((d) => d.manifest === undefined)).toBe(true);
+  expect(Object.keys(state.manifest)).toHaveLength(60);
+  // A per-deployment manifest makes this ~50 KB by 30 deployments.
+  expect(raw.length).toBeLessThan(20000);
+});
+
+test("a device at seq 0 gets a snapshot of what is currently staged", () => {
+  const s = new StagingStore(dir);
+  s.init();
+  put(s, "fam", "a.epdgz", "data");
+  s.deploy(); // seq 1
+  fs.unlinkSync(path.join(s.albumsDir, "fam", "a.epdgz"));
+  put(s, "fam", "b.epdgz", "other!");
+  s.deploy(); // seq 2
+
+  // A fresh device holds no files, so replaying the delete of a.epdgz is
+  // pointless; it needs exactly the current contents.
+  expect(s.changesSince(0)).toEqual({
+    latestSeq: 2,
+    ops: [{ op: "put", album: "fam", file: "b.epdgz", size: 6 }],
+  });
+});
+
+test("deployments acked by every known device are pruned", () => {
+  const s = new StagingStore(dir);
+  s.init();
+  put(s, "fam", "a.epdgz", "data");
+  s.deploy(); // seq 1
+  put(s, "fam", "b.epdgz", "data");
+  s.deploy(); // seq 2
+  expect(
+    JSON.parse(fs.readFileSync(s.statePath, "utf8")).deployments,
+  ).toHaveLength(2);
+
+  s.ack("AABBCC", 2);
+  expect(
+    JSON.parse(fs.readFileSync(s.statePath, "utf8")).deployments,
+  ).toHaveLength(0);
+  // Still serves the device that is fully caught up.
+  expect(s.changesSince(2)).toEqual({ latestSeq: 2, ops: [] });
+});
+
+test("a device whose history was pruned is told to reset", () => {
+  const s = new StagingStore(dir);
+  s.init();
+  put(s, "fam", "a.epdgz", "data");
+  s.deploy(); // seq 1
+  put(s, "fam", "b.epdgz", "data");
+  s.deploy(); // seq 2
+  s.ack("AABBCC", 2); // prunes seq 1 and 2
+
+  // A second device still sitting at seq 1 can no longer be served
+  // incrementally, so it must restart from a snapshot.
+  expect(s.changesSince(1)).toEqual({ reset: true });
+});
+
+test("an old-format state.json is migrated to a single manifest", () => {
+  const s = new StagingStore(dir);
+  s.init();
+  put(s, "fam", "a.epdgz", "data");
+  const manifest = s.currentManifest();
+  fs.writeFileSync(
+    s.statePath,
+    JSON.stringify({
+      deployments: [
+        {
+          seq: 1,
+          ops: [{ op: "put", album: "fam", file: "a.epdgz", size: 4 }],
+          manifest,
+          at: "2026-01-01T00:00:00.000Z",
+        },
+      ],
+      devices: { AABBCC: 1 },
+    }),
+  );
+
+  const s2 = new StagingStore(dir);
+  s2.init();
+  expect(s2.latestSeq).toBe(1);
+  expect(s2.pendingOps()).toEqual([]);
+  expect(JSON.parse(fs.readFileSync(s2.statePath, "utf8")).manifest).toEqual(
+    manifest,
+  );
 });
 
 test("changesSince past the head signals reset", () => {
@@ -76,6 +180,40 @@ test("corrupt state.json is backed up and reset instead of crashing", () => {
   s2.init();
   expect(s2.latestSeq).toBe(0);
   expect(fs.existsSync(`${s.statePath}.corrupt`)).toBe(true);
+});
+
+test("an ack beyond the latest seq cannot wipe the journal", () => {
+  const s = new StagingStore(dir);
+  s.init();
+  put(s, "fam", "a.epdgz", "data");
+  s.deploy(); // seq 1
+  put(s, "fam", "b.epdgz", "data");
+  s.deploy(); // seq 2
+
+  s.ack("BOGUS", 999); // a device cannot be further ahead than the server
+  expect(s.deviceStatus()).toEqual({ BOGUS: 2 });
+
+  put(s, "fam", "c.epdgz", "data");
+  s.deploy(); // seq 3
+
+  // An unclamped 999 would put the prune floor above seq 3 and drop it on
+  // sight, leaving a device at seq 2 with nothing to replay but a reset.
+  expect(s.changesSince(2)).toEqual({
+    latestSeq: 3,
+    ops: [{ op: "put", album: "fam", file: "c.epdgz", size: 4 }],
+  });
+});
+
+test("ack ignores values that are not real sequence numbers", () => {
+  const s = new StagingStore(dir);
+  s.init();
+  put(s, "fam", "a.epdgz", "data");
+  s.deploy(); // seq 1
+
+  s.ack("A", -5);
+  s.ack("B", 1.5);
+  s.ack("C", NaN);
+  expect(s.deviceStatus()).toEqual({});
 });
 
 test("ack records per-device seq", () => {

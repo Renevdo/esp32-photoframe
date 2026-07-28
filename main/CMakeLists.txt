@@ -62,7 +62,11 @@ idf_component_register(
     INCLUDE_DIRS "."
     REQUIRES ""
     PRIV_REQUIRES ${PRIV_REQUIRES} 
-    EMBED_FILES "webapp/index.html" "webapp/icon.svg" "webapp/assets/index.css" "webapp/assets/index.js" "webapp/assets/index2.js" "webapp/assets/exif-reader.js" "webapp/assets/browser.js" "webapp/assets/__vite-browser-external.js" "resources/measurement_sample.jpg"
+    # Webapp assets are gzipped by the webapp build
+    # (webapp/vite-plugins/gzip-assets.js) and served with
+    # Content-Encoding: gzip. The sample JPEG is already compressed, so it
+    # stays raw.
+    EMBED_FILES "webapp/index.html.gz" "webapp/icon.svg.gz" "webapp/assets/index.css.gz" "webapp/assets/index.js.gz" "webapp/assets/index2.js.gz" "webapp/assets/exif-reader.js.gz" "webapp/assets/browser.js.gz" "webapp/assets/__vite-browser-external.js.gz" "resources/measurement_sample.jpg"
 )
 
 # Embed splash screen EPDGZ files (generated at build time by generate_splash.py)

@@ -2,11 +2,14 @@ import { defineConfig } from "vite";
 import vue from "@vitejs/plugin-vue";
 import vuetify from "vite-plugin-vuetify";
 import { resolve } from "path";
+import { gzipAssets } from "./vite-plugins/gzip-assets.js";
 
 export default defineConfig({
   plugins: [
     vue(),
     vuetify({ autoImport: true }),
+    // Must come last: it writes a .gz beside each emitted file.
+    gzipAssets(),
   ],
   build: {
     outDir: resolve(__dirname, "../main/webapp"),
