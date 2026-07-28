@@ -37,11 +37,14 @@ function readEnabled(store) {
   }
 }
 
+// tmp + rename, like StagingStore.saveState. A torn write here is not
+// harmless: readEnabled falls back to {} on parse failure, which silently
+// re-enables every album the user had switched off.
 function writeEnabled(store, flags) {
-  fs.writeFileSync(
-    path.join(store.storeDir, "proxy-albums.json"),
-    JSON.stringify(flags, null, 2),
-  );
+  const target = path.join(store.storeDir, "proxy-albums.json");
+  const tmp = `${target}.tmp`;
+  fs.writeFileSync(tmp, JSON.stringify(flags, null, 2));
+  fs.renameSync(tmp, target);
 }
 
 function safePathPair(value) {
@@ -62,7 +65,10 @@ export async function proxyRoute(req, res, u, seg, opts) {
   if (seg[0] !== "api") return false;
   const route = seg.join("/");
 
-  const deployIfAuto = () => {
+  // Every route that changes the store ends here: the cached device view must
+  // not outlive the change, and auto-deploy publishes it to the frame.
+  const afterMutation = () => {
+    virtual.invalidate();
     if (autoDeploy) store.deploy();
   };
 
@@ -70,8 +76,9 @@ export async function proxyRoute(req, res, u, seg, opts) {
   if (route === "api/albums" && req.method === "GET") {
     const enabled = readEnabled(store);
     const albums = fs
-      .readdirSync(store.albumsDir)
-      .filter((n) => fs.statSync(path.join(store.albumsDir, n)).isDirectory())
+      .readdirSync(store.albumsDir, { withFileTypes: true })
+      .filter((e) => e.isDirectory())
+      .map((e) => e.name)
       .sort()
       .map((name) => ({ name, enabled: enabled[name] !== false }));
     json(res, 200, albums);
@@ -110,7 +117,7 @@ export async function proxyRoute(req, res, u, seg, opts) {
     const flags = readEnabled(store);
     delete flags[name];
     writeEnabled(store, flags);
-    deployIfAuto();
+    afterMutation();
     success(res);
     return true;
   }
@@ -189,7 +196,7 @@ export async function proxyRoute(req, res, u, seg, opts) {
     const base = path.basename(image.filename, ext);
     fs.writeFileSync(path.join(albumPath, image.filename), image.data);
     fs.writeFileSync(path.join(albumPath, `${base}.jpg`), thumbnail.data);
-    deployIfAuto();
+    afterMutation();
     success(res, { filepath: `${album}/${image.filename}` });
     return true;
   }
@@ -210,7 +217,7 @@ export async function proxyRoute(req, res, u, seg, opts) {
     fs.rmSync(path.join(store.albumsDir, pair.album, `${base}.jpg`), {
       force: true,
     });
-    deployIfAuto();
+    afterMutation();
     success(res);
     return true;
   }
@@ -239,18 +246,7 @@ export async function proxyRoute(req, res, u, seg, opts) {
 
   // GET /api/current_image -> newest thumbnail in the store, else 404
   if (route === "api/current_image" && req.method === "GET") {
-    let newest = null;
-    for (const album of fs.readdirSync(store.albumsDir)) {
-      const albumPath = path.join(store.albumsDir, album);
-      if (!fs.statSync(albumPath).isDirectory()) continue;
-      for (const f of fs.readdirSync(albumPath)) {
-        if (!f.endsWith(".jpg")) continue;
-        const st = fs.statSync(path.join(albumPath, f));
-        if (!newest || st.mtimeMs > newest.mtimeMs) {
-          newest = { path: path.join(albumPath, f), mtimeMs: st.mtimeMs };
-        }
-      }
-    }
+    const newest = virtual.newestThumbnail();
     if (!newest) {
       json(res, 404, { error: "No image currently displayed" });
       return true;
