@@ -103,7 +103,7 @@ static esp_err_t browser_js_handler(httpd_req_t *req)
 static esp_err_t vite_browser_external_js_handler(httpd_req_t *req)
 {
     return webapp_send_asset(req, "application/javascript", vite_browser_external_js_start,
-                        vite_browser_external_js_end);
+                             vite_browser_external_js_end);
 }
 
 static esp_err_t icon_handler(httpd_req_t *req)
