@@ -18,6 +18,67 @@ export class VirtualDevice {
     this.version = opts.version || "staging";
     this.cachedConfigPath = path.join(store.storeDir, "device-config.json");
     this.overridesPath = path.join(store.storeDir, "proxy-config.json");
+    // The app polls system-info and current_image, and answering either from
+    // scratch means readdir + stat over the whole store (~1.8 ms per 300
+    // photos, synchronously, so it stalls uploads in flight). Both are status
+    // readouts, so a short cache window is fine. Nothing the sync protocol
+    // depends on reads through here: deploy() and pendingOps() call
+    // store.currentManifest() directly and are always exact.
+    this.cacheMs = opts.cacheMs ?? 1000;
+    this.storageCache = null;
+    this.thumbnailCache = null;
+  }
+
+  // Called by the routes that change the store, so an app that uploads and
+  // immediately re-reads never sees the previous state. Edits made elsewhere
+  // (staging UI, files dropped in by hand) still fall out of cache on their
+  // own within cacheMs.
+  invalidate() {
+    this.storageCache = null;
+    this.thumbnailCache = null;
+  }
+
+  #cached(slot, compute) {
+    const now = Date.now();
+    const hit = this[slot];
+    if (hit && now - hit.at < this.cacheMs) {
+      return hit.value;
+    }
+    const value = compute();
+    this[slot] = { at: now, value };
+    return value;
+  }
+
+  storageUsed() {
+    return this.#cached("storageCache", () => {
+      let used = 0;
+      for (const meta of Object.values(this.store.currentManifest())) {
+        used += meta.size;
+      }
+      return used;
+    });
+  }
+
+  // Path of the most recently written thumbnail, or null when the store holds
+  // none. Backs GET /api/current_image.
+  newestThumbnail() {
+    return this.#cached("thumbnailCache", () => {
+      let newest = null;
+      for (const album of fs.readdirSync(this.store.albumsDir, {
+        withFileTypes: true,
+      })) {
+        if (!album.isDirectory()) continue;
+        const albumPath = path.join(this.store.albumsDir, album.name);
+        for (const f of fs.readdirSync(albumPath)) {
+          if (!f.endsWith(".jpg")) continue;
+          const st = fs.statSync(path.join(albumPath, f));
+          if (!newest || st.mtimeMs > newest.mtimeMs) {
+            newest = { path: path.join(albumPath, f), mtimeMs: st.mtimeMs };
+          }
+        }
+      }
+      return newest;
+    });
   }
 
   readJson(p) {
@@ -65,10 +126,7 @@ export class VirtualDevice {
       .slice(0, 12)
       .toUpperCase();
 
-    let storageUsed = 0;
-    for (const [, meta] of Object.entries(this.store.currentManifest())) {
-      storageUsed += meta.size;
-    }
+    const storageUsed = this.storageUsed();
 
     return {
       device_name: this.instanceName,
