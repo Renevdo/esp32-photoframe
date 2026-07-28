@@ -69,14 +69,17 @@ def generate_csv(use_internal_flash, flash_size_mb, coredump=False):
                 f"ota_0,    app,  ota_0,   0x20000,  0x280000,\n"
                 f"ota_1,    app,  ota_1,   0x2A0000, 0x280000,\n"
             )
-            stg_size = 8 * 1024 * 1024 - stg_offset - cd_size
         else:
             stg_offset = 0x720000
             csv += (
                 f"ota_0,    app,  ota_0,   0x20000,  0x380000,\n"
                 f"ota_1,    app,  ota_1,   0x3A0000, 0x380000,\n"
             )
-            stg_size = (flash_size_mb - 8) * 1024 * 1024 - cd_size
+        # Storage gets everything the app slots leave behind. Derive it from the
+        # offset: the 16/32 MB case used to assume the region ahead of storage
+        # was a round 8 MB, but it ends at 0x720000, so the last 896 KB of flash
+        # was never addressed by any partition.
+        stg_size = flash_size_mb * 1024 * 1024 - stg_offset - cd_size
         csv += f"storage,  data, littlefs,{stg_offset:#08x}, {stg_size:#010x},\n"
         if coredump:
             csv += f"coredump, data, coredump,{stg_offset + stg_size:#08x}, {cd_size:#010x},\n"
