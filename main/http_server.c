@@ -13,6 +13,7 @@
 #include "album_manager.h"
 #include "board_hal.h"
 #include "cJSON.h"
+#include "cert_pin.h"
 #include "color_palette.h"
 #include "config.h"
 #include "config_manager.h"
@@ -1503,6 +1504,36 @@ static esp_err_t crash_clear_handler(httpd_req_t *req)
     return ESP_OK;
 }
 
+// Re-runs the trust decision for the current image URL. Saving an unchanged
+// URL does nothing, so this is the way to accept a self-signed server's new
+// certificate.
+static esp_err_t trust_certificate_handler(httpd_req_t *req)
+{
+    cJSON *resp = cJSON_CreateObject();
+    const char *url = config_manager_get_image_url();
+    char err[256];
+    bool ok = false;
+    if (!url || strncmp(url, "https://", 8) != 0) {
+        cJSON_AddStringToObject(resp, "message", "Image URL is not an HTTPS URL");
+    } else if (cert_pin_fetch_and_store(url, err, sizeof(err)) != ESP_OK) {
+        cJSON_AddStringToObject(resp, "message", err);
+    } else {
+        ok = true;
+        cJSON_AddBoolToObject(resp, "ca_cert_set", config_manager_has_ca_cert());
+        utils_set_last_fetch_error(NULL);
+    }
+    cJSON_AddStringToObject(resp, "status", ok ? "success" : "error");
+    char *json = cJSON_PrintUnformatted(resp);
+    cJSON_Delete(resp);
+    httpd_resp_set_type(req, "application/json");
+    if (!ok) {
+        httpd_resp_set_status(req, "400 Bad Request");
+    }
+    httpd_resp_sendstr(req, json);
+    free(json);
+    return ok ? ESP_OK : ESP_FAIL;
+}
+
 static esp_err_t config_handler(httpd_req_t *req)
 {
     if (!system_ready) {
@@ -1569,9 +1600,7 @@ static esp_err_t config_handler(httpd_req_t *req)
         const char *image_url = config_manager_get_image_url();
         cJSON_AddStringToObject(root, "image_url", image_url ? image_url : "");
 
-        size_t ca_cert_len = 0;
-        config_manager_get_ca_cert_der(&ca_cert_len);
-        cJSON_AddBoolToObject(root, "ca_cert_set", ca_cert_len > 0);
+        cJSON_AddBoolToObject(root, "ca_cert_set", config_manager_has_ca_cert());
 
         const char *fetch_error = utils_get_last_fetch_error();
         if (fetch_error && strlen(fetch_error) > 0) {
@@ -2594,6 +2623,8 @@ esp_err_t http_server_init(void)
         register_uri("/api/config", HTTP_GET, config_handler);
 
         register_uri("/api/config", HTTP_POST, config_handler);
+
+        register_uri("/api/trust-certificate", HTTP_POST, trust_certificate_handler);
 
         register_uri("/api/config", HTTP_PATCH, config_handler);
 

@@ -17,15 +17,18 @@
 #include "display_flow.h"
 #include "display_manager.h"
 #include "esp_app_desc.h"
+#include "esp_crt_bundle.h"
 #include "esp_http_client.h"
 #include "esp_log.h"
 #include "esp_mac.h"
 #include "esp_netif.h"
 #include "esp_timer.h"
+#include "esp_tls.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
 #include "http_auth.h"
 #include "image_processor.h"
+#include "mbedtls/x509.h"
 #include "mdns_service.h"
 #include "nvs.h"
 #include "periodic_tasks.h"
@@ -567,9 +570,10 @@ typedef struct {
     FILE *file;
     int total_read;
     char *content_type;
-    char *thumbnail_url;   // Optional thumbnail URL from X-Thumbnail-URL header
-    char *config_payload;  // Optional config JSON from X-Config-Payload header
-    char *etag;            // Optional ETag buffer (HTTP_ETAG_MAX_LEN bytes) for 304 caching
+    char *thumbnail_url;     // Optional thumbnail URL from X-Thumbnail-URL header
+    char *config_payload;    // Optional config JSON from X-Config-Payload header
+    char *etag;              // Optional ETag buffer (HTTP_ETAG_MAX_LEN bytes) for 304 caching
+    bool tls_verify_failed;  // The server's certificate was rejected by this attempt's trust anchor
 } download_context_t;
 
 // HTTP event handler to write data to file
@@ -578,6 +582,18 @@ static esp_err_t http_event_handler(esp_http_client_event_t *evt)
     download_context_t *ctx = (download_context_t *) evt->user_data;
 
     switch (evt->event_id) {
+    case HTTP_EVENT_ERROR: {
+        // esp_http_client folds every TLS failure into ESP_ERR_HTTP_CONNECT;
+        // the esp-tls error handle still says whether it was the certificate.
+        int mbedtls_code = 0;
+        int verify_flags = 0;
+        esp_tls_get_and_clear_last_error((esp_tls_error_handle_t) evt->data, &mbedtls_code,
+                                         &verify_flags);
+        if (verify_flags != 0 || mbedtls_code == -MBEDTLS_ERR_X509_CERT_VERIFY_FAILED) {
+            ctx->tls_verify_failed = true;
+        }
+        break;
+    }
     case HTTP_EVENT_ON_DATA:
         if (ctx->file) {
             fwrite(evt->data, 1, evt->data_len, ctx->file);
@@ -687,6 +703,24 @@ static esp_err_t fetch_perform_download(const char *url, bool *not_modified, ima
     // a minute or more -- another one mostly spends battery on the same result
     // (#121).
     int64_t fetch_start_us = esp_timer_get_time();
+    // A pinned CA is tried first. When it rejects the server, the built-in CA
+    // bundle gets a turn: the server may have moved to a publicly trusted
+    // certificate, or its CA renewed under another intermediate, which Let's
+    // Encrypt does at random (#142). If the bundle accepts, the pin has
+    // outlived its purpose and is dropped. A server neither accepts is never
+    // pinned here: trust is only ever granted from the owner's own request
+    // (saving the URL, POST /api/trust-certificate), never to whoever answers
+    // a fetch.
+    enum { TRUST_PIN, TRUST_BUNDLE } trust;
+    size_t pinned_cert_len = 0;
+    bool had_pin = config_manager_has_ca_cert();
+    bool pin_rejected = false;
+    // Which pin was rejected: a config request can replace it while this
+    // fetch is still running, and that one must survive.
+    uint32_t rejected_pin_generation = 0;
+    char tls_err_msg[256] = {0};
+    trust = had_pin ? TRUST_PIN : TRUST_BUNDLE;
+
     int attempts = 0;
     for (int retry = 0; retry < max_retries; retry++) {
         if (retry > 0) {
@@ -722,10 +756,6 @@ static esp_err_t fetch_perform_download(const char *url, bool *not_modified, ima
                                   .config_payload = config_payload_buffer,
                                   .etag = etag_buffer};
 
-        // Use custom CA cert for HTTPS if configured
-        size_t pinned_cert_len = 0;
-        const uint8_t *pinned_cert = config_manager_get_ca_cert_der(&pinned_cert_len);
-
         esp_http_client_config_t config = {
             .url = url,
             // Per socket operation (connect, and each wait for more data), not
@@ -737,13 +767,35 @@ static esp_err_t fetch_perform_download(const char *url, bool *not_modified, ima
             .max_redirection_count = 5,
             .user_agent = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
             .buffer_size_tx = 2048,
-            .cert_der = (const char *) pinned_cert,
-            .cert_len = pinned_cert_len,
         };
+        // The request keeps its own copy of the pin: a config request can
+        // replace (and free) the stored one while the download runs.
+        uint8_t *pinned_cert = NULL;
+        uint32_t pin_generation = 0;
+        if (trust == TRUST_PIN) {
+            pinned_cert = config_manager_copy_ca_cert_der(&pinned_cert_len, &pin_generation);
+            if (!pinned_cert && pinned_cert_len > 0) {
+                // Never fall through to an unverified request
+                ESP_LOGE(TAG, "Out of memory copying the pinned certificate");
+                fclose(file);
+                continue;
+            }
+            if (!pinned_cert) {
+                ESP_LOGW(TAG, "The pin was removed since this fetch started; using the CA bundle");
+                trust = TRUST_BUNDLE;
+            }
+        }
+        if (trust == TRUST_PIN) {
+            config.cert_der = (const char *) pinned_cert;
+            config.cert_len = pinned_cert_len;
+        } else {
+            config.crt_bundle_attach = esp_crt_bundle_attach;
+        }
 
         esp_http_client_handle_t client = esp_http_client_init(&config);
         if (!client) {
             ESP_LOGE(TAG, "Failed to initialize HTTP client");
+            free(pinned_cert);
             fclose(file);
             continue;  // Try again
         }
@@ -849,6 +901,17 @@ static esp_err_t fetch_perform_download(const char *url, bool *not_modified, ima
 
         fclose(file);
         esp_http_client_cleanup(client);
+        free(pinned_cert);
+
+        if (err == ESP_OK && pin_rejected) {
+            if (config_manager_clear_ca_cert_der_if_unchanged(rejected_pin_generation)) {
+                ESP_LOGW(TAG, "The CA bundle verifies the server; dropped the pinned certificate");
+                config_manager_touch_config();
+            } else {
+                ESP_LOGW(TAG, "Pinned certificate was replaced during the fetch; keeping it");
+            }
+            pin_rejected = false;
+        }
 
         // 304 Not Modified: server confirmed the cached image is still current.
         // eInk retains the last rendered image without power, so skip the refresh
@@ -885,6 +948,24 @@ static esp_err_t fetch_perform_download(const char *url, bool *not_modified, ima
         // Clean up failed download (don't free content_type - it's reused across retries)
         unlink(temp_upload_path);
 
+        if (ctx.tls_verify_failed) {
+            if (trust == TRUST_PIN) {
+                ESP_LOGW(TAG, "Pinned certificate rejects the server; trying the CA bundle");
+                trust = TRUST_BUNDLE;
+                pin_rejected = true;
+                rejected_pin_generation = pin_generation;
+                retry--;  // another trust anchor, not a repeat of this attempt
+                continue;
+            }
+            snprintf(tls_err_msg, sizeof(tls_err_msg),
+                     had_pin ? "Server certificate not trusted: it matches neither the pinned "
+                               "certificate nor a public CA. Use \"Trust certificate\" under "
+                               "the Image URL to accept it."
+                             : "Server certificate is not issued by a public CA. Use \"Trust "
+                               "certificate\" under the Image URL to accept it.");
+            break;
+        }
+
         // A 4xx is the server's verdict on this request (bad URL, bad token,
         // 429 telling us to slow down); asking again 3 s later only spends
         // battery on the same answer (#121, #134). 5xx and transport errors
@@ -900,7 +981,9 @@ static esp_err_t fetch_perform_download(const char *url, bool *not_modified, ima
                  (int) ((esp_timer_get_time() - fetch_start_us) / 1000));
         // Store descriptive error for UI display
         char err_msg[256];
-        if (err != ESP_OK) {
+        if (tls_err_msg[0] != '\0') {
+            snprintf(err_msg, sizeof(err_msg), "%s", tls_err_msg);
+        } else if (err != ESP_OK) {
             const char *err_name = esp_err_to_name(err);
             if (err == ESP_ERR_HTTP_CONNECT) {
                 snprintf(err_msg, sizeof(err_msg), "Connection failed (%s)", err_name);

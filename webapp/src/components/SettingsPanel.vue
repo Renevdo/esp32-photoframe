@@ -36,6 +36,33 @@ const scheduleValid = computed(() => {
 const browserZone = browserTimeZone();
 const browserZoneKnown = ruleForZone(browserZone) !== null;
 const showAdvancedTz = ref(false);
+const trustingCert = ref(false);
+const trustCertResult = ref(null); // { ok, text }
+
+// Re-runs the frame's trust decision for the current image URL (needed after a
+// self-signed server changed its certificate; saving an unchanged URL does nothing).
+async function trustCertificate() {
+  trustingCert.value = true;
+  trustCertResult.value = null;
+  try {
+    const response = await fetch("/api/trust-certificate", { method: "POST" });
+    const data = await response.json().catch(() => ({}));
+    if (!response.ok) {
+      throw new Error(data.message || `HTTP ${response.status}`);
+    }
+    // Only the certificate state changed; a reload would discard unsaved edits.
+    settingsStore.deviceSettings.caCertSet = !!data.ca_cert_set;
+    settingsStore.deviceSettings.lastFetchError = "";
+    trustCertResult.value = {
+      ok: true,
+      text: data.ca_cert_set ? "Certificate pinned." : "Verified by a public CA; no pin needed.",
+    };
+  } catch (error) {
+    trustCertResult.value = { ok: false, text: error.message };
+  } finally {
+    trustingCert.value = false;
+  }
+}
 
 const timezoneRule = computed(() => settingsStore.deviceSettings.timezone);
 // Only an edited rule is checked: a value an older firmware let through must
@@ -807,9 +834,40 @@ async function performFactoryReset() {
                         Certificate Pinned
                       </v-chip>
                       <div class="text-caption text-medium-emphasis">
-                        The TLS certificate for this HTTPS URL is pinned. It will re-pin
-                        automatically when you change the URL.
+                        No public CA vouches for this server, so its own certificate is pinned. If
+                        the server moves to a publicly trusted certificate the pin is dropped by
+                        itself; after a self-signed certificate changes, use Trust certificate below
+                        to accept the new one.
                       </div>
+                    </div>
+
+                    <div
+                      v-if="settingsStore.deviceSettings.imageUrl?.startsWith('https://')"
+                      class="mb-4 d-flex flex-wrap align-center ga-2"
+                    >
+                      <v-btn
+                        variant="tonal"
+                        size="small"
+                        prepend-icon="mdi-certificate"
+                        :loading="trustingCert"
+                        :disabled="!settingsStore.isImageUrlSaved()"
+                        @click="trustCertificate"
+                      >
+                        Trust certificate
+                      </v-btn>
+                      <span
+                        v-if="!settingsStore.isImageUrlSaved()"
+                        class="text-caption text-medium-emphasis"
+                      >
+                        Save the URL first.
+                      </span>
+                      <span
+                        v-else-if="trustCertResult"
+                        class="text-caption"
+                        :class="trustCertResult.ok ? 'text-success' : 'text-error'"
+                      >
+                        {{ trustCertResult.text }}
+                      </span>
                     </div>
 
                     <v-alert

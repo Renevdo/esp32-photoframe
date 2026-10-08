@@ -269,7 +269,7 @@ Update configuration. Only include fields to change.
 }
 ```
 
-**TLS certificate pinning:** If the request changes `image_url` to an HTTPS URL different from the current value, the device fetches and pins that server's TLS certificate before applying the config. If the fetch fails, the request returns `400 Bad Request` with a `message` describing the failure and **no config changes are persisted**. Changing `image_url` to an HTTP URL or clearing it clears any previously pinned certificate. `GET /api/config` reports the current state via `ca_cert_set`.
+**TLS certificate pinning:** If the request changes `image_url` to an HTTPS URL different from the current value, the device connects to that server before applying the config. A server whose certificate the built-in CA bundle verifies (Let's Encrypt and the other public CAs) is not pinned, and any earlier pin is cleared; otherwise the server's own CA — the issuer it sends, or the certificate itself when it is self-signed — is pinned, trust on first use. If the connection fails, the request returns `400 Bad Request` with a `message` describing the failure and the URL is not changed. Changing `image_url` to an HTTP URL or clearing it clears any pinned certificate. `GET /api/config` reports the current state via `ca_cert_set`.
 
 **Device password:** `http_password` sets the password that gates the whole
 HTTP API (see [Authentication](#authentication)). A string sets it, `""` clears
@@ -284,6 +284,20 @@ arrives in a server-pushed config (see
 ### `PATCH /api/config`
 
 Same as `POST /api/config`. Both methods accept partial updates.
+
+### `POST /api/trust-certificate`
+
+Repeats the trust decision described under **TLS certificate pinning** for the current `image_url` without changing it: a server the CA bundle verifies ends up with no pin, any other server has its certificate pinned afresh. This is how a self-signed server's new certificate is accepted, since saving an unchanged URL does nothing. Clears `last_fetch_error`.
+
+**Response:**
+```json
+{
+  "status": "success",
+  "ca_cert_set": true
+}
+```
+
+`400 Bad Request` with `{"status": "error", "message": "..."}` when the URL is not HTTPS or the server could not be reached.
 
 ---
 
@@ -560,7 +574,7 @@ When `rotation_mode` is `"url"`, the device issues an HTTP `GET` against `image_
 - Retries: up to 3 attempts with a 3 s delay between them, but a retry only starts while the fetch has used less than 20 s in total — quick failures (connection refused, DNS, a server hiccup, zero-length body) are retried, an attempt that already ran into the I/O timeout is not. A completed `4xx` response is never retried: it is the server's verdict on the request (bad URL, bad token, `429`), while `5xx` and transport errors — including a `4xx` whose body was cut off — get their retries
 - Redirects: up to 5 followed automatically
 - User-Agent: `Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36`
-- TLS: if a pinned CA certificate is set (`ca_cert_set: true` in `/api/config`), it is used to validate the server; otherwise the default trust store applies
+- TLS: a pinned CA certificate (`ca_cert_set: true` in `/api/config`) is tried first; if it rejects the server, the built-in CA bundle is tried, and if that verifies the server the pin is dropped (the server renewed under a new intermediate or moved to a public CA). Without a pin only the bundle is consulted. A fetch never pins anything: a certificate it cannot verify is reported as `last_fetch_error` ("Server certificate not trusted…") and is accepted only through `POST /api/trust-certificate` or a changed `image_url`
 
 ### Request Headers
 

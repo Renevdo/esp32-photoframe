@@ -7,6 +7,8 @@
 #include "board_hal.h"
 #include "config.h"
 #include "esp_log.h"
+#include "freertos/FreeRTOS.h"
+#include "freertos/semphr.h"
 #include "nvs.h"
 #include "storage.h"
 
@@ -43,8 +45,13 @@ static int32_t last_index = -1;
 
 // Auto Rotate - URL
 static char image_url[IMAGE_URL_MAX_LEN] = {0};
+// The pinned CA certificate is read by the rotation task while the HTTP task
+// can replace it, so pointer, length and generation move together under a
+// lock; nothing outside this file ever sees the buffer itself.
+static SemaphoreHandle_t ca_cert_lock;
 static uint8_t *ca_cert_der = NULL;  // Heap-allocated DER certificate
 static size_t ca_cert_der_len = 0;
+static uint32_t ca_cert_generation = 0;  // Bumped by every change, see config_manager.h
 static char access_token[ACCESS_TOKEN_MAX_LEN] = {0};
 static char http_password[HTTP_PASSWORD_MAX_LEN] = {0};
 static char http_header_key[HTTP_HEADER_KEY_MAX_LEN] = {0};
@@ -147,6 +154,10 @@ static void cron_from_legacy_interval(int seconds, char *out, size_t out_len)
 esp_err_t config_manager_init(void)
 {
     ESP_LOGI(TAG, "Initializing config manager");
+    ca_cert_lock = xSemaphoreCreateMutex();
+    if (!ca_cert_lock) {
+        return ESP_ERR_NO_MEM;
+    }
 
     // Rotation-schedule load is resolved after the read-only NVS handle closes
     // (migration / default seeding may need a read-write handle).
@@ -898,8 +909,9 @@ const char *config_manager_get_image_url(void)
     return image_url;
 }
 
-void config_manager_set_ca_cert_der(const uint8_t *der, size_t len)
+static void set_ca_cert_locked(const uint8_t *der, size_t len)
 {
+    ca_cert_generation++;
     free(ca_cert_der);
     ca_cert_der = NULL;
     ca_cert_der_len = 0;
@@ -927,12 +939,46 @@ void config_manager_set_ca_cert_der(const uint8_t *der, size_t len)
              ca_cert_der_len);
 }
 
-const uint8_t *config_manager_get_ca_cert_der(size_t *out_len)
+void config_manager_set_ca_cert_der(const uint8_t *der, size_t len)
 {
-    if (out_len) {
-        *out_len = ca_cert_der_len;
+    xSemaphoreTake(ca_cert_lock, portMAX_DELAY);
+    set_ca_cert_locked(der, len);
+    xSemaphoreGive(ca_cert_lock);
+}
+
+bool config_manager_has_ca_cert(void)
+{
+    xSemaphoreTake(ca_cert_lock, portMAX_DELAY);
+    bool set = ca_cert_der_len > 0;
+    xSemaphoreGive(ca_cert_lock);
+    return set;
+}
+
+uint8_t *config_manager_copy_ca_cert_der(size_t *out_len, uint32_t *generation)
+{
+    xSemaphoreTake(ca_cert_lock, portMAX_DELAY);
+    *out_len = ca_cert_der_len;
+    *generation = ca_cert_generation;
+    uint8_t *copy = NULL;
+    if (ca_cert_der_len > 0) {
+        copy = malloc(ca_cert_der_len);
+        if (copy) {
+            memcpy(copy, ca_cert_der, ca_cert_der_len);
+        }
     }
-    return ca_cert_der;
+    xSemaphoreGive(ca_cert_lock);
+    return copy;
+}
+
+bool config_manager_clear_ca_cert_der_if_unchanged(uint32_t generation)
+{
+    xSemaphoreTake(ca_cert_lock, portMAX_DELAY);
+    bool unchanged = generation == ca_cert_generation;
+    if (unchanged) {
+        set_ca_cert_locked(NULL, 0);
+    }
+    xSemaphoreGive(ca_cert_lock);
+    return unchanged;
 }
 
 void config_manager_set_access_token(const char *token)
