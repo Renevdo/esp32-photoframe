@@ -29,7 +29,10 @@ function gzipOutput(outDir) {
 export default defineConfig({
   plugins: [
     vue(),
-    vuetify({ autoImport: true }),
+    vuetify({
+      autoImport: true,
+      styles: { configFile: "src/styles/settings.scss" },
+    }),
     gzipOutput(resolve(__dirname, "../main/webapp")),
   ],
   build: {

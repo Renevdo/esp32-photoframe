@@ -1,0 +1,17 @@
+// Vuetify's SASS settings; vite.config.js compiles its styles with these.
+//
+// The platform's own UI font instead of Roboto from Google Fonts: the frame
+// serves this page itself and may have no internet access, so the page
+// would wait for the font request to fail and then render in a fallback
+// anyway.
+@forward "vuetify/settings" with (
+  $body-font-family: (
+    system-ui,
+    -apple-system,
+    "Segoe UI",
+    Roboto,
+    "Helvetica Neue",
+    Arial,
+    sans-serif,
+  )
+);
