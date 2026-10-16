@@ -333,10 +333,17 @@ const snackbar = ref(false);
 const snackbarText = ref("");
 const snackbarColor = ref("info");
 
-// The chosen file could not be read as an image (damaged, or a format this browser cannot decode): say so
-// and drop it, instead of a blank preview with buttons that do nothing.
+// The chosen file could not be read as an image: say so and drop it, instead
+// of a blank preview with buttons that do nothing. A HEIC photo is the usual
+// case: only Safari decodes them, and nothing here converts.
 function onImageUnreadable() {
-  showMessage("This file could not be read as an image", "error");
+  const name = selectedFile.value?.name ?? "";
+  showMessage(
+    /\.hei[cf]$/i.test(name)
+      ? "This browser cannot read HEIC photos; export it as JPEG, or use Safari"
+      : "This file could not be read as an image",
+    "error"
+  );
   resetUpload();
 }
 
@@ -547,7 +554,7 @@ async function generateAiImage() {
       <input
         ref="fileInput"
         type="file"
-        accept=".jpg,.jpeg,.png,.heic,.heif,.webp,.gif,.bmp"
+        accept="image/*"
         style="display: none"
         @change="onFileSelected"
       />
@@ -564,7 +571,7 @@ async function generateAiImage() {
       >
         <v-icon icon="mdi-cloud-upload" size="64" color="grey" />
         <p class="text-h6 mt-4">Click or drag image to upload</p>
-        <p class="text-body-2 text-grey">Supports: JPG, PNG, HEIC, WebP, GIF, BMP</p>
+        <p class="text-body-2 text-grey">Supports: JPG, PNG, WebP, GIF, BMP; HEIC only in Safari</p>
         <div class="my-3 d-flex align-center" style="width: 100%">
           <v-divider />
           <span class="mx-2 text-grey text-caption">OR</span>
