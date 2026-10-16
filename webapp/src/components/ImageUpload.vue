@@ -2,6 +2,7 @@
 import { ref, onMounted, computed, watch } from "vue";
 import { useAppStore, useSettingsStore } from "../stores";
 import ImageProcessing from "./ImageProcessing.vue";
+import { IDENTITY, orientCanvas } from "../utils/orientation";
 import ProcessingControls from "./ProcessingControls.vue";
 import { wideEdit } from "../utils/uiPrefs";
 
@@ -163,10 +164,12 @@ async function uploadImage(mode = "upload") {
     const scaleMode = imageProcessingRef.value?.scaleMode || "cover";
     const uploadParams = imageProcessingRef.value?.getUploadParams() || {};
 
-    // Process image with theoretical palette for device at native dimensions.
-    // The library handles rotation, scaling (cover/fit/custom), and clean
+    // Process image with theoretical palette for device at native dimensions,
+    // from the picture rotated / mirrored as in the preview. The library
+    // handles the panel orientation, scaling (cover/fit/custom), and clean
     // background replacement after dithering.
-    const result = imageProcessor.processImage(sourceCanvas.value, {
+    const source = orientCanvas(sourceCanvas.value, uploadParams.transform ?? IDENTITY);
+    const result = imageProcessor.processImage(source, {
       displayWidth: targetWidth,
       displayHeight: targetHeight,
       palette,

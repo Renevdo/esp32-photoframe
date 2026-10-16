@@ -1,6 +1,7 @@
 <script setup>
 import { ref, watch, onMounted, onUnmounted } from "vue";
 import ToneCurve from "./ToneCurve.vue";
+import { IDENTITY, rotated, mirrored, orientCanvas } from "../utils/orientation";
 import { useAppStore, useSettingsStore } from "../stores";
 
 const props = defineProps({
@@ -72,7 +73,11 @@ let panStartY = 0;
 let panStartImgX = 0;
 let panStartImgY = 0;
 
-// Source canvas for reprocessing
+// Rotate / mirror chosen for this picture; reset when a new one is loaded
+const transform = ref({ ...IDENTITY });
+
+// Source canvas for reprocessing: the decoded picture with `transform` applied
+let decodedCanvas = null;
 let sourceCanvas = null;
 let imageProcessor = null;
 let isReady = ref(false);
@@ -293,6 +298,29 @@ watch(scaleMode, async (newMode) => {
   }
 });
 
+// Rotate (quarter turns, positive = clockwise) or mirror the picture, then
+// lay it out again. A turn may swap the picture's width and height, so the
+// custom pan/zoom starts over; a mirror keeps it and swaps the side margins.
+async function rotate(quarterTurns) {
+  transform.value = rotated(transform.value, quarterTurns);
+  await applyTransform(initCustomMode);
+}
+
+async function mirror() {
+  transform.value = mirrored(transform.value);
+  await applyTransform(() => {
+    const { frameWidth } = getFrameDimensions();
+    customPanX.value = frameWidth - (customPanX.value + sourceCanvas.width * customZoom.value);
+  });
+}
+
+async function applyTransform(relayoutCustom) {
+  if (!decodedCanvas) return;
+  sourceCanvas = orientCanvas(decodedCanvas, transform.value);
+  if (scaleMode.value === "custom") relayoutCustom();
+  if (isReady.value) await updatePreview();
+}
+
 async function loadAndProcessImage(file) {
   if (!originalCanvasRef.value || !processedCanvasRef.value) return;
 
@@ -301,11 +329,12 @@ async function loadAndProcessImage(file) {
   try {
     const img = await loadImage(file);
 
-    sourceCanvas = document.createElement("canvas");
-    sourceCanvas.width = img.width;
-    sourceCanvas.height = img.height;
-    const sourceCtx = sourceCanvas.getContext("2d");
-    sourceCtx.drawImage(img, 0, 0);
+    decodedCanvas = document.createElement("canvas");
+    decodedCanvas.width = img.width;
+    decodedCanvas.height = img.height;
+    decodedCanvas.getContext("2d").drawImage(img, 0, 0);
+    transform.value = { ...IDENTITY };
+    sourceCanvas = decodedCanvas;
 
     // Default to the configured scale mode and background from the shared
     // processing params (the device settings, or the page-local params on
@@ -511,6 +540,7 @@ defineExpose({
   getUploadParams() {
     return {
       backgroundColorName: bgColorMode.value,
+      transform: { ...transform.value },
       zoom: customZoom.value,
       panX: customPanX.value,
       panY: customPanY.value,
@@ -527,28 +557,50 @@ onUnmounted(() => {
   <v-card>
     <v-card-text>
       <div class="d-flex flex-column align-center">
-        <!-- Scale Mode Selector -->
-        <v-btn-toggle
-          v-model="scaleMode"
-          mandatory
-          color="primary"
-          variant="outlined"
-          density="compact"
-          class="mb-3"
-        >
-          <v-btn value="cover" size="small">
-            <v-icon start size="small">mdi-crop-free</v-icon>
-            Cover
-          </v-btn>
-          <v-btn value="fit" size="small">
-            <v-icon start size="small">mdi-fit-to-screen</v-icon>
-            Fit
-          </v-btn>
-          <v-btn value="custom" size="small">
-            <v-icon start size="small">mdi-cursor-move</v-icon>
-            Custom
-          </v-btn>
-        </v-btn-toggle>
+        <div class="d-flex flex-wrap justify-center ga-2 mb-3">
+          <!-- Scale Mode Selector -->
+          <v-btn-toggle
+            v-model="scaleMode"
+            mandatory
+            color="primary"
+            variant="outlined"
+            density="compact"
+          >
+            <v-btn value="cover" size="small">
+              <v-icon start size="small">mdi-crop-free</v-icon>
+              Cover
+            </v-btn>
+            <v-btn value="fit" size="small">
+              <v-icon start size="small">mdi-fit-to-screen</v-icon>
+              Fit
+            </v-btn>
+            <v-btn value="custom" size="small">
+              <v-icon start size="small">mdi-cursor-move</v-icon>
+              Custom
+            </v-btn>
+          </v-btn-toggle>
+
+          <!-- Rotate / mirror the picture before it is laid out. Plain small
+               buttons rather than icon buttons, so they get the same height
+               and padding as the Cover / Fit / Custom ones beside them. -->
+          <v-btn-group variant="outlined" density="compact" divided>
+            <v-btn size="small" title="Rotate left" @click="rotate(-1)">
+              <v-icon size="small">mdi-rotate-left</v-icon>
+            </v-btn>
+            <v-btn size="small" title="Rotate right" @click="rotate(1)">
+              <v-icon size="small">mdi-rotate-right</v-icon>
+            </v-btn>
+            <v-btn
+              size="small"
+              title="Mirror"
+              :active="transform.flipH"
+              :color="transform.flipH ? 'primary' : undefined"
+              @click="mirror"
+            >
+              <v-icon size="small">mdi-flip-horizontal</v-icon>
+            </v-btn>
+          </v-btn-group>
+        </div>
 
         <!-- Background color selector (only for fit/custom modes) -->
         <div v-if="scaleMode !== 'cover'" class="d-flex align-center mb-3">
