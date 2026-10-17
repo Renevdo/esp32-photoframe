@@ -129,10 +129,10 @@ static esp_err_t http_event_handler(esp_http_client_event_t *evt)
     return ESP_OK;
 }
 
-// This project's own release (14 assets - 7 boards x merged+OTA binary) measured 34 KB of
-// response JSON (GitHub's per-asset metadata, e.g. the uploader object, is verbose) - 64 KB
-// leaves real headroom for more assets later.
-#define GITHUB_RESPONSE_MAX_LEN (64 * 1024)
+// The v2.19.0 release (16 assets: 8 boards x merged + OTA binary) is 50 KB of response
+// JSON, GitHub's per-asset metadata being verbose. The buffer lives in PSRAM, so the cap
+// only needs to stop a runaway read, not save memory.
+#define GITHUB_RESPONSE_MAX_LEN (256 * 1024)
 
 static esp_err_t fetch_github_release_info(char *latest_version, size_t version_len,
                                            char *download_url, size_t url_len)
@@ -164,7 +164,10 @@ static esp_err_t fetch_github_release_info(char *latest_version, size_t version_
         goto cleanup;
     }
 
-    int content_length = esp_http_client_fetch_headers(client);
+    // Negative on a transport error; 0 for a body without a Content-Length,
+    // i.e. Transfer-Encoding: chunked (esp_http_client_is_chunked_response()
+    // is set then); otherwise the body's length.
+    int64_t content_length = esp_http_client_fetch_headers(client);
     int status_code = esp_http_client_get_status_code(client);
 
     if (status_code != 200) {
@@ -173,40 +176,38 @@ static esp_err_t fetch_github_release_info(char *latest_version, size_t version_
         goto cleanup;
     }
 
-    if (content_length == 0) {
-        ESP_LOGE(TAG, "Empty response body");
+    if (content_length < 0) {
+        ESP_LOGE(TAG, "Failed to read response headers");
         err = ESP_FAIL;
         goto cleanup;
     }
 
     if (content_length >= INT_MAX) {
-        ESP_LOGE(TAG, "Content length overflow: %d", content_length);
+        ESP_LOGE(TAG, "Content length overflow: %lld", (long long) content_length);
         err = ESP_FAIL;
         goto cleanup;
     }
 
     if (content_length > 0) {
-        // The common case: a fixed Content-Length, read in one call as before.
-        response_buffer = heap_caps_malloc(content_length + 1, MALLOC_CAP_SPIRAM);
+        // A fixed Content-Length, read in one call.
+        response_buffer = heap_caps_malloc((size_t) content_length + 1, MALLOC_CAP_SPIRAM);
         if (response_buffer == NULL) {
             ESP_LOGE(TAG, "Failed to allocate memory for response");
             err = ESP_ERR_NO_MEM;
             goto cleanup;
         }
 
-        response_len = esp_http_client_read_response(client, response_buffer, content_length);
+        response_len = esp_http_client_read_response(client, response_buffer, (int) content_length);
         if (response_len <= 0) {
             ESP_LOGE(TAG, "Failed to read response");
             err = ESP_FAIL;
             goto cleanup;
         }
     } else {
-        // content_length < 0: GitHub's releases API can answer with
-        // Transfer-Encoding: chunked rather than a fixed Content-Length, which
-        // esp_http_client_fetch_headers() reports this way. Read in a growing
-        // buffer instead, capped well above the size of a real response, until
-        // the client has no more data (esp_http_client_read() returns 0);
-        // esp_http_client_read() itself already de-chunks the body.
+        // Chunked: GitHub's edge answers /releases/latest this way as often as
+        // not (#156). Read into a growing buffer, capped well above the size of
+        // a real response, until the client has no more data
+        // (esp_http_client_read() returns 0); the client de-chunks the body.
         size_t capacity = 4096;
         size_t total = 0;
         response_buffer = heap_caps_malloc(capacity, MALLOC_CAP_SPIRAM);
@@ -243,7 +244,7 @@ static esp_err_t fetch_github_release_info(char *latest_version, size_t version_
             total += (size_t) n;
         }
         if (total == 0) {
-            ESP_LOGE(TAG, "Failed to read response");
+            ESP_LOGE(TAG, "Empty response body");
             err = ESP_FAIL;
             goto cleanup;
         }
@@ -251,6 +252,8 @@ static esp_err_t fetch_github_release_info(char *latest_version, size_t version_
     }
 
     response_buffer[response_len] = '\0';
+    ESP_LOGI(TAG, "Release metadata: %d bytes%s", response_len,
+             content_length == 0 ? " (chunked)" : "");
 
     // Parse JSON response
     cJSON *json = cJSON_Parse(response_buffer);
