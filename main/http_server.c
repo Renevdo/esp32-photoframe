@@ -34,6 +34,7 @@
 #include "http_auth.h"
 #include "image_processor.h"
 #include "lwip/sockets.h"
+#include "multipart.h"
 #include "nvs_flash.h"
 #include "ota_manager.h"
 #include "periodic_tasks.h"
@@ -318,32 +319,21 @@ static esp_err_t parse_multipart_upload(httpd_req_t *req, const char *base_dir,
     int buf_len = 0;
     int remaining = req->content_len;
 
-    char boundary[128] = {0};
-    if (httpd_req_get_hdr_value_str(req, "Content-Type", boundary, sizeof(boundary)) != ESP_OK) {
+    char content_type[128] = {0};
+    if (httpd_req_get_hdr_value_str(req, "Content-Type", content_type, sizeof(content_type)) !=
+        ESP_OK) {
         free(buf);
         httpd_resp_send_err(req, HTTPD_400_BAD_REQUEST, "No Content-Type header");
         return ESP_FAIL;
     }
 
-    char *boundary_start = strstr(boundary, "boundary=");
-    if (!boundary_start) {
+    char delimiter[128];
+    int delimiter_len = multipart_delimiter(content_type, delimiter, sizeof(delimiter));
+    if (delimiter_len < 0) {
         free(buf);
         httpd_resp_send_err(req, HTTPD_400_BAD_REQUEST, "No boundary found");
         return ESP_FAIL;
     }
-
-    boundary_start += 9;
-    char *boundary_end = strchr(boundary_start, '\r');
-    if (!boundary_end)
-        boundary_end = strchr(boundary_start, '\n');
-    if (!boundary_end)
-        boundary_end = strchr(boundary_start, ';');
-    if (!boundary_end)
-        boundary_end = boundary_start + strlen(boundary_start);
-
-    int boundary_value_len = boundary_end - boundary_start;
-    snprintf(boundary, sizeof(boundary), "--%.*s", boundary_value_len, boundary_start);
-    int full_boundary_len = strlen(boundary);
 
     char current_field[64] = {0};
     bool header_parsed = false;
@@ -444,44 +434,21 @@ static esp_err_t parse_multipart_upload(httpd_req_t *req, const char *base_dir,
                 break;
             }
         } else {
-            char *boundary_pos = NULL;
-            for (int i = 0; i <= buf_len - full_boundary_len; i++) {
-                if (memcmp(buf + i, boundary, full_boundary_len) == 0) {
-                    boundary_pos = buf + i;
-                    break;
-                }
+            multipart_scan_t scan =
+                multipart_scan_body(buf, buf_len, delimiter, delimiter_len, remaining == 0);
+            if (fp && scan.write_len > 0) {
+                fwrite(buf, 1, scan.write_len, fp);
             }
+            buf_len -= scan.consumed;
+            memmove(buf, buf + scan.consumed, buf_len);
 
-            if (boundary_pos) {
-                int data_len = boundary_pos - buf;
-                if (fp && data_len > 0) {
-                    fwrite(buf, 1, data_len, fp);
-                }
-
+            if (scan.found) {
                 if (fp) {
                     fclose(fp);
                     fp = NULL;
                 }
-
-                int consumed = (boundary_pos - buf) + full_boundary_len;
-                buf_len -= consumed;
-                memmove(buf, buf + consumed, buf_len);
                 header_parsed = false;
                 current_field[0] = '\0';
-            } else {
-                int safe_write = buf_len - (full_boundary_len - 1);
-                if (safe_write > 0 && remaining > 0) {
-                    if (fp) {
-                        fwrite(buf, 1, safe_write, fp);
-                    }
-                    buf_len -= safe_write;
-                    memmove(buf, buf + safe_write, buf_len);
-                } else if (remaining == 0 && buf_len > 0) {
-                    if (fp) {
-                        fwrite(buf, 1, buf_len, fp);
-                    }
-                    buf_len = 0;
-                }
             }
         }
     }
