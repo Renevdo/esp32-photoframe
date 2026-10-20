@@ -335,12 +335,11 @@ static esp_err_t parse_multipart_upload(httpd_req_t *req, const char *base_dir,
         return ESP_FAIL;
     }
 
-    char current_field[64] = {0};
     bool header_parsed = false;
     FILE *fp = NULL;
 
     while (remaining > 0 || buf_len > 0) {
-        if (remaining > 0 && buf_len < 2048) {
+        if (remaining > 0 && buf_len < MULTIPART_MAX_HEADER_LEN) {
             int to_read = MIN(remaining, 4096 - buf_len);
             int received = httpd_req_recv(req, buf + buf_len, to_read);
 
@@ -359,80 +358,62 @@ static esp_err_t parse_multipart_upload(httpd_req_t *req, const char *base_dir,
         }
 
         if (!header_parsed) {
-            char *name_start = strstr(buf, "name=\"");
-            if (name_start && name_start < buf + buf_len) {
-                name_start += 6;
-                char *name_end = strchr(name_start, '"');
-                if (name_end && name_end < buf + buf_len) {
-                    int name_len = name_end - name_start;
-                    strncpy(current_field, name_start, MIN(name_len, sizeof(current_field) - 1));
-                    current_field[MIN(name_len, sizeof(current_field) - 1)] = '\0';
+            multipart_part_t part;
+            multipart_headers_status_t status = multipart_parse_headers(buf, buf_len, &part);
+            if (status == MULTIPART_HEADERS_TOO_LONG) {
+                free(buf);
+                httpd_resp_send_err(req, HTTPD_400_BAD_REQUEST, "Multipart headers too long");
+                return ESP_FAIL;
+            }
+            if (status == MULTIPART_HEADERS_PENDING) {
+                if (remaining == 0) {
+                    break;
                 }
+                continue;
             }
 
-            char *filename_start = strstr(buf, "filename=\"");
-            if (filename_start && filename_start < buf + buf_len) {
-                filename_start += 10;
-                char *filename_end = strchr(filename_start, '"');
-                if (filename_end && filename_end < buf + buf_len) {
-                    int name_len = filename_end - filename_start;
+            if (part.has_filename && strcmp(part.name, "image") == 0) {
+                strncpy(result->original_filename, part.filename,
+                        sizeof(result->original_filename) - 1);
+                result->original_filename[sizeof(result->original_filename) - 1] = '\0';
 
-                    if (strcmp(current_field, "image") == 0) {
-                        // Capture original filename
-                        strncpy(result->original_filename, filename_start,
-                                MIN(name_len, sizeof(result->original_filename) - 1));
-                        result->original_filename[MIN(
-                            name_len, sizeof(result->original_filename) - 1)] = '\0';
-
-                        if (require_png) {
-                            // Check PNG extension for image field
-                            char *ext = strrchr(result->original_filename, '.');
-                            if (!ext ||
-                                (strcasecmp(ext, ".png") != 0 && strcasecmp(ext, ".epdgz") != 0)) {
-                                if (fp)
-                                    fclose(fp);
-                                free(buf);
-                                httpd_resp_send_err(req, HTTPD_400_BAD_REQUEST,
-                                                    "Only PNG and EPDGZ files are allowed");
-                                return ESP_FAIL;
-                            }
-                        }
-
-                        snprintf(result->image_path, sizeof(result->image_path), "%s/%s", base_dir,
-                                 image_filename);
-                        fp = fopen(result->image_path, "wb");
-                        if (!fp) {
-                            free(buf);
-                            httpd_resp_send_err(req, HTTPD_500_INTERNAL_SERVER_ERROR,
-                                                "Failed to create file");
-                            return ESP_FAIL;
-                        }
-                        result->has_image = true;
-                    } else if (strcmp(current_field, "thumbnail") == 0) {
-                        snprintf(result->thumbnail_path, sizeof(result->thumbnail_path), "%s/%s",
-                                 base_dir, thumb_filename);
-                        fp = fopen(result->thumbnail_path, "wb");
-                        if (!fp) {
-                            free(buf);
-                            httpd_resp_send_err(req, HTTPD_500_INTERNAL_SERVER_ERROR,
-                                                "Failed to create file");
-                            return ESP_FAIL;
-                        }
-                        result->has_thumbnail = true;
+                if (require_png) {
+                    // Check PNG extension for image field
+                    char *ext = strrchr(result->original_filename, '.');
+                    if (!ext || (strcasecmp(ext, ".png") != 0 && strcasecmp(ext, ".epdgz") != 0)) {
+                        free(buf);
+                        httpd_resp_send_err(req, HTTPD_400_BAD_REQUEST,
+                                            "Only PNG and EPDGZ files are allowed");
+                        return ESP_FAIL;
                     }
                 }
+
+                snprintf(result->image_path, sizeof(result->image_path), "%s/%s", base_dir,
+                         image_filename);
+                fp = fopen(result->image_path, "wb");
+                if (!fp) {
+                    free(buf);
+                    httpd_resp_send_err(req, HTTPD_500_INTERNAL_SERVER_ERROR,
+                                        "Failed to create file");
+                    return ESP_FAIL;
+                }
+                result->has_image = true;
+            } else if (part.has_filename && strcmp(part.name, "thumbnail") == 0) {
+                snprintf(result->thumbnail_path, sizeof(result->thumbnail_path), "%s/%s", base_dir,
+                         thumb_filename);
+                fp = fopen(result->thumbnail_path, "wb");
+                if (!fp) {
+                    free(buf);
+                    httpd_resp_send_err(req, HTTPD_500_INTERNAL_SERVER_ERROR,
+                                        "Failed to create file");
+                    return ESP_FAIL;
+                }
+                result->has_thumbnail = true;
             }
 
-            char *data_start = strstr(buf, "\r\n\r\n");
-            if (data_start && data_start < buf + buf_len) {
-                data_start += 4;
-                int header_len = data_start - buf;
-                header_parsed = true;
-                buf_len -= header_len;
-                memmove(buf, data_start, buf_len);
-            } else if (remaining == 0) {
-                break;
-            }
+            header_parsed = true;
+            buf_len -= part.header_len;
+            memmove(buf, buf + part.header_len, buf_len);
         } else {
             multipart_scan_t scan =
                 multipart_scan_body(buf, buf_len, delimiter, delimiter_len, remaining == 0);
@@ -448,7 +429,6 @@ static esp_err_t parse_multipart_upload(httpd_req_t *req, const char *base_dir,
                     fp = NULL;
                 }
                 header_parsed = false;
-                current_field[0] = '\0';
             }
         }
     }
