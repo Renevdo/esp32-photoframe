@@ -62,6 +62,16 @@ TEST(MultipartDelimiter, RejectsMissingOrOversizedBoundary)
         -1);
 }
 
+TEST(MultipartDelimiter, UnquotesQuotedBoundary)
+{
+    char out[128];
+    int len = multipart_delimiter("multipart/form-data; boundary=\"abc;def\"; charset=utf-8", out,
+                                  sizeof(out));
+    EXPECT_EQ(std::string(out, len), "\r\n--abc;def");
+    EXPECT_EQ(multipart_delimiter("multipart/form-data; boundary=\"abc", out, sizeof(out)), -1);
+    EXPECT_EQ(multipart_delimiter("multipart/form-data; boundary=\"\"", out, sizeof(out)), -1);
+}
+
 TEST(MultipartScan, PartBodyExcludesDelimiterCrlfAtEveryReadSplit)
 {
     // Payload ends in its own CRLF and holds near-miss delimiters, which must all survive.
@@ -88,4 +98,96 @@ TEST(MultipartScan, TruncatedBodyKeepsHeldBackBytes)
 {
     std::string stream = "abc\r\n--formdata";
     EXPECT_EQ(drain_part(stream, 4, nullptr), stream);
+}
+
+static const std::string kFirstHeaders =
+    "------formdata-undici-0123456789\r\n"
+    "Content-Disposition: form-data; name=\"image\"; filename=\"photo.png\"\r\n"
+    "Content-Type: image/png\r\n"
+    "\r\n";
+
+TEST(MultipartHeaders, CompleteOnlyOnceTheBlankLineArrivesAtEveryReadSplit)
+{
+    std::string stream = kFirstHeaders + "\x89PNG body";
+    for (size_t split = 0; split <= stream.size(); split++) {
+        // The bytes past buf_len hold a blank line of their own, which must not be seen.
+        std::string buf = stream.substr(0, split) + "\r\n\r\n";
+        multipart_part_t part;
+        multipart_headers_status_t status = multipart_parse_headers(buf.data(), (int) split, &part);
+        if (split < kFirstHeaders.size()) {
+            EXPECT_EQ(status, MULTIPART_HEADERS_PENDING) << "split " << split;
+            continue;
+        }
+        ASSERT_EQ(status, MULTIPART_HEADERS_DONE) << "split " << split;
+        EXPECT_EQ(part.header_len, (int) kFirstHeaders.size()) << "split " << split;
+        EXPECT_STREQ(part.name, "image") << "split " << split;
+        EXPECT_TRUE(part.has_filename) << "split " << split;
+        EXPECT_STREQ(part.filename, "photo.png") << "split " << split;
+    }
+}
+
+TEST(MultipartHeaders, HeadersAfterDelimiter)
+{
+    // What follows a delimiter: the rest of the boundary line, then the headers.
+    std::string buf =
+        "\r\ncontent-disposition: form-data; filename=\"t.jpg\"; name=thumbnail\r\n\r\nx";
+    multipart_part_t part;
+    ASSERT_EQ(multipart_parse_headers(buf.data(), (int) buf.size(), &part), MULTIPART_HEADERS_DONE);
+    EXPECT_EQ(part.header_len, (int) buf.size() - 1);
+    EXPECT_STREQ(part.name, "thumbnail");
+    EXPECT_STREQ(part.filename, "t.jpg");
+}
+
+TEST(MultipartHeaders, FieldWithoutFilename)
+{
+    std::string buf = "\r\nContent-Disposition: form-data; name=\"filename\"\r\n\r\n";
+    multipart_part_t part;
+    ASSERT_EQ(multipart_parse_headers(buf.data(), (int) buf.size(), &part), MULTIPART_HEADERS_DONE);
+    EXPECT_STREQ(part.name, "filename");
+    EXPECT_FALSE(part.has_filename);
+}
+
+TEST(MultipartHeaders, NoHeaders)
+{
+    std::string buf = "\r\n\r\nbody";
+    multipart_part_t part;
+    ASSERT_EQ(multipart_parse_headers(buf.data(), (int) buf.size(), &part), MULTIPART_HEADERS_DONE);
+    EXPECT_EQ(part.header_len, 4);
+    EXPECT_STREQ(part.name, "");
+    EXPECT_FALSE(part.has_filename);
+}
+
+TEST(MultipartHeaders, BlockWithoutBlankLineIsTooLong)
+{
+    std::string buf = "\r\nContent-Disposition: form-data; name=\"image\"\r\nX-Pad: ";
+    buf.append(MULTIPART_MAX_HEADER_LEN, 'a');
+    multipart_part_t part;
+    EXPECT_EQ(multipart_parse_headers(buf.data(), MULTIPART_MAX_HEADER_LEN - 1, &part),
+              MULTIPART_HEADERS_PENDING);
+    EXPECT_EQ(multipart_parse_headers(buf.data(), MULTIPART_MAX_HEADER_LEN, &part),
+              MULTIPART_HEADERS_TOO_LONG);
+    EXPECT_EQ(multipart_parse_headers(buf.data(), (int) buf.size(), &part),
+              MULTIPART_HEADERS_TOO_LONG);
+}
+
+TEST(MultipartHeaders, BlankLinePastTheLimitIsTooLong)
+{
+    std::string buf(MULTIPART_MAX_HEADER_LEN - 3, 'a');
+    buf += "\r\n\r\n";
+    multipart_part_t part;
+    EXPECT_EQ(multipart_parse_headers(buf.data(), (int) buf.size(), &part),
+              MULTIPART_HEADERS_TOO_LONG);
+    buf.erase(0, 1);
+    ASSERT_EQ(multipart_parse_headers(buf.data(), (int) buf.size(), &part), MULTIPART_HEADERS_DONE);
+    EXPECT_EQ(part.header_len, MULTIPART_MAX_HEADER_LEN);
+}
+
+TEST(MultipartHeaders, LongFilenameIsTruncated)
+{
+    std::string name(400, 'n');
+    std::string buf =
+        "\r\nContent-Disposition: form-data; name=\"image\"; filename=\"" + name + ".png\"\r\n\r\n";
+    multipart_part_t part;
+    ASSERT_EQ(multipart_parse_headers(buf.data(), (int) buf.size(), &part), MULTIPART_HEADERS_DONE);
+    EXPECT_EQ(std::string(part.filename), name.substr(0, sizeof(part.filename) - 1));
 }
