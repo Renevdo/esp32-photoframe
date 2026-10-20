@@ -2164,6 +2164,7 @@ static esp_err_t ota_status_handler(httpd_req_t *req)
         break;
     }
 
+    cJSON_AddBoolToObject(response, "supported", OTA_SUPPORTED);
     cJSON_AddStringToObject(response, "state", state_str);
     cJSON_AddStringToObject(response, "current_version", status.current_version);
     cJSON_AddStringToObject(response, "latest_version", status.latest_version);

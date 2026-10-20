@@ -6,6 +6,8 @@ const latestVersion = ref("-");
 const otaState = ref("idle");
 const progress = ref(0);
 const errorMessage = ref("");
+// False on builds without OTA partitions, where updates are flashed over USB.
+const supported = ref(true);
 
 let statusPollInterval = null;
 
@@ -66,6 +68,7 @@ async function loadOTAStatus() {
     otaState.value = data.state || "idle";
     progress.value = data.progress_percent || 0;
     errorMessage.value = data.error_message || "";
+    supported.value = data.supported !== false;
 
     // If state is idle and we were checking, it means check completed with no update
     // The state should transition appropriately based on the backend response
@@ -151,12 +154,16 @@ onUnmounted(() => {
   <v-card style="overflow: visible">
     <v-card-title class="d-flex align-center">
       <v-icon icon="mdi-cellphone-arrow-down" class="mr-2" />
-      Firmware Update (OTA)
+      {{ supported ? "Firmware Update (OTA)" : "Firmware" }}
     </v-card-title>
 
     <v-card-text>
-      <p class="text-body-2 text-grey mb-4">
+      <p v-if="supported" class="text-body-2 text-grey mb-4">
         Check for and install firmware updates from GitHub releases.
+      </p>
+      <p v-else class="text-body-2 text-grey mb-4">
+        This build has no OTA slot, to leave more flash for photos. Update it over USB with the web
+        flasher.
       </p>
 
       <v-row align="center">
@@ -169,7 +176,7 @@ onUnmounted(() => {
           </v-list-item>
         </v-col>
 
-        <v-col cols="12" md="4">
+        <v-col v-if="supported" cols="12" md="4">
           <v-list-item>
             <v-list-item-title class="text-body-2 text-grey"> Latest Version </v-list-item-title>
             <v-list-item-subtitle class="text-h6">
@@ -180,7 +187,7 @@ onUnmounted(() => {
           </v-list-item>
         </v-col>
 
-        <v-col cols="12" md="4" class="d-flex flex-wrap justify-end gap-2">
+        <v-col v-if="supported" cols="12" md="4" class="d-flex flex-wrap justify-end gap-2">
           <v-btn variant="outlined" :loading="checking" class="mr-2" @click="checkForUpdate">
             <v-icon icon="mdi-refresh" start />
             Check

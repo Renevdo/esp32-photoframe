@@ -1,0 +1,12 @@
+menu "PhotoFrame Firmware"
+
+    config PHOTOFRAME_OTA
+        bool "Over-the-air firmware updates"
+        default y
+        help
+            Builds two OTA app slots and the GitHub release updater. Disable it
+            to get a single factory app slot instead: on boards that keep photos
+            in internal flash, the freed slot goes to the storage partition, and
+            firmware updates have to be flashed over USB.
+
+endmenu

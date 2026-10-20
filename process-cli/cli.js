@@ -742,7 +742,7 @@ program
   .version("1.0.0")
   .argument(
     "[input]",
-    "Input image file or directory with album subdirectories (not needed for --staging)",
+    "Input image file or directory with album subdirectories (not needed for --staging, --backup or --restore)",
   )
   .option("-o, --output-dir <dir>", "Output directory", ".")
   .option(
@@ -784,6 +784,14 @@ program
     "Start staging server for offline album preparation (deploy-on-wake sync)",
   )
   .option("--staging-port <port>", "Port for staging server", "8090")
+  .option(
+    "--backup <dir>",
+    "Download every album, image, thumbnail and the settings from the device (requires --host)",
+  )
+  .option(
+    "--restore <dir>",
+    "Upload a --backup directory back to the device (requires --host)",
+  )
   .option(
     "--staging-name <name>",
     "Instance name the companion app sees via mDNS",
@@ -1009,8 +1017,38 @@ program
       return; // Server runs indefinitely
     }
 
+    if (options.backup || options.restore) {
+      if (options.backup && options.restore) {
+        console.error("Error: --backup and --restore cannot be used together");
+        process.exit(1);
+      }
+      const { backupDevice, restoreDevice } = await import("./backup.js");
+      try {
+        if (options.backup) {
+          const { unrestorable } = await backupDevice(
+            options.host,
+            path.resolve(options.backup),
+          );
+          // Fail so a scripted backup-then-reflash stops before losing them.
+          if (unrestorable.length > 0) process.exit(1);
+        } else {
+          const { failed } = await restoreDevice(
+            options.host,
+            path.resolve(options.restore),
+          );
+          if (failed.length > 0) process.exit(1);
+        }
+      } catch (error) {
+        console.error(`Error: ${error.message}`);
+        process.exit(1);
+      }
+      return;
+    }
+
     if (!input) {
-      console.error("Error: missing input (required unless using --staging)");
+      console.error(
+        "Error: missing input (required unless using --staging, --backup or --restore)",
+      );
       process.exit(1);
     }
 

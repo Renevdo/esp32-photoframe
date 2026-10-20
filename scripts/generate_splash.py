@@ -129,8 +129,8 @@ def generate_splash_svg(width: int, height: int) -> tuple:
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 {width} {height}" width="{width}" height="{height}">
   <defs>
     <linearGradient id="bg">
-      <stop offset="0%" stop-color="#5a3a20"/>
-      <stop offset="100%" stop-color="#5a3a20"/>
+      <stop offset="0%" stop-color="#000000"/>
+      <stop offset="100%" stop-color="#000000"/>
     </linearGradient>
     <linearGradient id="pic-bg" x1="0" y1="0" x2="0" y2="1">
       <stop offset="0%" stop-color="#f4c896"/>
@@ -160,10 +160,10 @@ def generate_splash_svg(width: int, height: int) -> tuple:
   <!-- Title -->
   <text x="{width / 2}" y="{title_y + title_size * 1.2}" text-anchor="middle"
         font-family="sans-serif" font-size="{title_size}" font-weight="600"
-        fill="#f0e4d0">ESP Frame</text>
+        fill="#ffffff">ESP Frame</text>
   <text x="{width / 2}" y="{title_y + title_size * 1.5 + subtitle_size * 1.8}" text-anchor="middle"
         font-family="sans-serif" font-size="{subtitle_size}"
-        fill="#f0e4d0" fill-opacity="0.6">Free and open source ecosystem for ESP32-based e-paper photo frames</text>
+        fill="#ffffff">Free and open source ecosystem for ESP32-based e-paper photo frames</text>
 
   <!-- WiFi QR code placeholder (white background) -->
   <rect x="{wifi_placeholder_x - 4}" y="{wifi_placeholder_y - 4}"
@@ -171,7 +171,7 @@ def generate_splash_svg(width: int, height: int) -> tuple:
         rx="4" fill="white"/>
   <text x="{wifi_placeholder_x + wifi_placeholder_size / 2}" y="{label_y}"
         text-anchor="middle" font-family="sans-serif" font-size="{label_size}"
-        fill="#f0e4d0" fill-opacity="0.8">Scan to connect WiFi</text>
+        fill="#ffffff">Scan to connect WiFi</text>
 
   <!-- App download QR code -->
   <rect x="{int(app_qr_x) - 4}" y="{int(qr_y) - 4}"
@@ -182,7 +182,7 @@ def generate_splash_svg(width: int, height: int) -> tuple:
   </g>
   <text x="{int(app_qr_x) + wifi_placeholder_size / 2}" y="{label_y}"
         text-anchor="middle" font-family="sans-serif" font-size="{label_size}"
-        fill="#f0e4d0" fill-opacity="0.8">Scan to download app</text>
+        fill="#ffffff">Scan to download app</text>
 
 </svg>"""
     return svg, wifi_placeholder_x, wifi_placeholder_y, wifi_placeholder_size
@@ -282,8 +282,8 @@ def generate_setup_complete_svg(width: int, height: int) -> tuple:
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 {width} {height}" width="{width}" height="{height}">
   <defs>
     <linearGradient id="bg">
-      <stop offset="0%" stop-color="#5a3a20"/>
-      <stop offset="100%" stop-color="#5a3a20"/>
+      <stop offset="0%" stop-color="#000000"/>
+      <stop offset="100%" stop-color="#000000"/>
     </linearGradient>
     <linearGradient id="pic-bg" x1="0" y1="0" x2="0" y2="1">
       <stop offset="0%" stop-color="#f4c896"/>
@@ -313,10 +313,10 @@ def generate_setup_complete_svg(width: int, height: int) -> tuple:
   <!-- Title -->
   <text x="{width / 2}" y="{title_y + title_size * 1.2}" text-anchor="middle"
         font-family="sans-serif" font-size="{title_size}" font-weight="600"
-        fill="#f0e4d0">Setup Complete!</text>
+        fill="#ffffff">Setup Complete!</text>
   <text x="{width / 2}" y="{title_y + title_size * 1.5 + subtitle_size * 1.8}" text-anchor="middle"
         font-family="sans-serif" font-size="{subtitle_size}"
-        fill="#f0e4d0" fill-opacity="0.6">Scan the QR code or use the app to get started</text>
+        fill="#ffffff">Scan the QR code or use the app to get started</text>
 
   <!-- QR code placeholder (white background, firmware fills at runtime) -->
   <rect x="{qr_x - 4}" y="{qr_y_pos - 4}"
@@ -324,7 +324,7 @@ def generate_setup_complete_svg(width: int, height: int) -> tuple:
         rx="4" fill="white"/>
   <text x="{width / 2}" y="{label_y}"
         text-anchor="middle" font-family="sans-serif" font-size="{label_size}"
-        fill="#f0e4d0" fill-opacity="0.8">Scan to open web interface</text>
+        fill="#ffffff">Scan to open web interface</text>
 
 </svg>"""
     return svg, qr_x, qr_y_pos, qr_size

@@ -1,5 +1,6 @@
 #include "sync_client.h"
 
+#include <dirent.h>
 #include <errno.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -20,8 +21,13 @@
 
 static const char *TAG = "sync_client";
 
-#define SYNC_NVS_NAMESPACE "sync"
-#define SYNC_NVS_SEQ_KEY "last_seq"
+// Kept on the storage it describes, so a wiped or swapped store starts again
+// from seq 0 and receives a full snapshot.
+#define SYNC_SEQ_PATH FS_MOUNT_POINT "/.sync_seq"
+#define SYNC_SEQ_TMP_PATH FS_MOUNT_POINT "/.sync_seq.tmp"
+// Where firmware before .sync_seq kept the cursor.
+#define LEGACY_NVS_NAMESPACE "sync"
+#define LEGACY_NVS_SEQ_KEY "last_seq"
 #define SYNC_CHANGES_MAX_LEN (32 * 1024)
 #define SYNC_HTTP_TIMEOUT_MS 15000
 
@@ -48,25 +54,99 @@ static void clear_sync_error(void)
     }
 }
 
-static int64_t load_last_seq(void)
+static bool store_last_seq(int64_t seq)
+{
+    FILE *f = fopen(SYNC_SEQ_TMP_PATH, "w");
+    if (!f) {
+        ESP_LOGW(TAG, "Cannot write %s: errno %d", SYNC_SEQ_TMP_PATH, errno);
+        return false;
+    }
+    bool ok = fprintf(f, "%lld\n", (long long) seq) > 0;
+    ok = (fclose(f) == 0) && ok;
+    // LittleFS renames over the old file atomically; FAT refuses, so it falls
+    // back to unlink + rename.
+    if (ok && rename(SYNC_SEQ_TMP_PATH, SYNC_SEQ_PATH) != 0) {
+        unlink(SYNC_SEQ_PATH);
+        ok = rename(SYNC_SEQ_TMP_PATH, SYNC_SEQ_PATH) == 0;
+    }
+    if (!ok) {
+        ESP_LOGW(TAG, "Cannot store sync seq %lld", (long long) seq);
+        unlink(SYNC_SEQ_TMP_PATH);
+    }
+    return ok;
+}
+
+// True when any album directory holds a file, i.e. the store survived since
+// the last sync rather than being formatted.
+static bool storage_has_album_files(void)
+{
+    DIR *root = opendir(IMAGE_DIRECTORY);
+    if (!root) {
+        return false;
+    }
+    bool found = false;
+    struct dirent *album;
+    while (!found && (album = readdir(root)) != NULL) {
+        if (album->d_name[0] == '.') {
+            continue;
+        }
+        char path[300];
+        snprintf(path, sizeof(path), "%s/%s", IMAGE_DIRECTORY, album->d_name);
+        DIR *dir = opendir(path);
+        if (!dir) {
+            continue;
+        }
+        struct dirent *entry;
+        while ((entry = readdir(dir)) != NULL) {
+            if (entry->d_name[0] != '.') {
+                found = true;
+                break;
+            }
+        }
+        closedir(dir);
+    }
+    closedir(root);
+    return found;
+}
+
+// Moves a pre-.sync_seq NVS cursor onto the storage, but only when that
+// storage still holds photos: on a wiped store it would hide the snapshot,
+// while on a kept one starting from 0 would drop pending deletes.
+static int64_t migrate_legacy_seq(void)
 {
     nvs_handle_t handle;
-    int64_t seq = 0;
-    if (nvs_open(SYNC_NVS_NAMESPACE, NVS_READONLY, &handle) == ESP_OK) {
-        nvs_get_i64(handle, SYNC_NVS_SEQ_KEY, &seq);
-        nvs_close(handle);
+    if (nvs_open(LEGACY_NVS_NAMESPACE, NVS_READWRITE, &handle) != ESP_OK) {
+        return 0;
     }
+    int64_t seq = 0;
+    if (nvs_get_i64(handle, LEGACY_NVS_SEQ_KEY, &seq) != ESP_OK || seq < 0) {
+        nvs_close(handle);
+        return 0;
+    }
+    if (seq > 0 && !storage_has_album_files()) {
+        ESP_LOGI(TAG, "Storage is empty, ignoring legacy sync seq %lld", (long long) seq);
+        seq = 0;
+    }
+    if (seq == 0 || store_last_seq(seq)) {
+        nvs_erase_key(handle, LEGACY_NVS_SEQ_KEY);
+        nvs_commit(handle);
+    }
+    nvs_close(handle);
     return seq;
 }
 
-static void store_last_seq(int64_t seq)
+static int64_t load_last_seq(void)
 {
-    nvs_handle_t handle;
-    if (nvs_open(SYNC_NVS_NAMESPACE, NVS_READWRITE, &handle) == ESP_OK) {
-        nvs_set_i64(handle, SYNC_NVS_SEQ_KEY, seq);
-        nvs_commit(handle);
-        nvs_close(handle);
+    FILE *f = fopen(SYNC_SEQ_PATH, "r");
+    if (!f) {
+        return migrate_legacy_seq();
     }
+    long long seq = 0;
+    if (fscanf(f, "%lld", &seq) != 1 || seq < 0) {
+        seq = 0;
+    }
+    fclose(f);
+    return (int64_t) seq;
 }
 
 // GET url into buf (NUL-terminated). Returns the HTTP status or -1 on error.
@@ -351,6 +431,11 @@ esp_err_t sync_client_run(void)
         if (changes->latest_seq != last_seq) {
             store_last_seq(changes->latest_seq);
         }
+        // Re-acking is idempotent and catches up an ack that failed after the
+        // cursor was stored.
+        if (changes->latest_seq > 0 && post_ack(base_url, changes->latest_seq) != ESP_OK) {
+            ESP_LOGW(TAG, "Ack failed; retries next wake");
+        }
         clear_sync_error();
         result = ESP_OK;
         goto done;
@@ -373,13 +458,18 @@ esp_err_t sync_client_run(void)
         }
     }
 
+    // The ack lets the server prune its journal, so it waits until the cursor
+    // is safely on storage; an unstored cursor replays these ops next wake.
+    if (!store_last_seq(changes->latest_seq)) {
+        utils_set_last_fetch_error("Album sync could not save its progress, retries next wake");
+        goto done;
+    }
     if (post_ack(base_url, changes->latest_seq) == ESP_OK) {
-        store_last_seq(changes->latest_seq);
         ESP_LOGI(TAG, "Sync complete at seq %lld", (long long) changes->latest_seq);
         clear_sync_error();
         result = ESP_OK;
     } else {
-        ESP_LOGW(TAG, "Ack failed; ops applied, will re-verify next wake");
+        ESP_LOGW(TAG, "Ack failed; the server keeps its journal until the next ack");
     }
 
 done:

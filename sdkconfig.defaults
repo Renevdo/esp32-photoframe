@@ -42,8 +42,8 @@ CONFIG_LWIP_MAX_SOCKETS=16
 CONFIG_ESP_SLEEP_POWER_DOWN_FLASH=y
 CONFIG_ESP_SLEEP_RTC_BUS_ISO_WORKAROUND=y
 
-# Log level
-CONFIG_LOG_DEFAULT_LEVEL_INFO=y
+# Log level: WARN compiles the INFO/DEBUG strings out of the image
+CONFIG_LOG_DEFAULT_LEVEL_WARN=y
 
 # Core dumps go to the `coredump` partition (scripts/generate_partitions.py)
 # and become the last_crash record at the next boot (main/crash_log.c). A dump
@@ -77,3 +77,12 @@ CONFIG_ESP_TLS_SKIP_SERVER_CERT_VERIFY=y
 
 # mbedTLS - Keep peer certificate for trust-cert endpoint
 CONFIG_MBEDTLS_SSL_KEEP_PEER_CERTIFICATE=y
+
+# Image size: every byte the app does not need goes to photo storage
+CONFIG_COMPILER_OPTIMIZATION_SIZE=y
+CONFIG_COMPILER_OPTIMIZATION_ASSERTIONS_SILENT=y
+CONFIG_MBEDTLS_CERTIFICATE_BUNDLE_DEFAULT_CMN=y
+
+# One factory app slot instead of two OTA slots (scripts/generate_partitions.py);
+# firmware updates are flashed over USB
+# CONFIG_PHOTOFRAME_OTA is not set
