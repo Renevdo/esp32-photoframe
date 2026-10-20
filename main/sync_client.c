@@ -431,6 +431,11 @@ esp_err_t sync_client_run(void)
         if (changes->latest_seq != last_seq) {
             store_last_seq(changes->latest_seq);
         }
+        // Re-acking is idempotent and catches up an ack that failed after the
+        // cursor was stored.
+        if (changes->latest_seq > 0 && post_ack(base_url, changes->latest_seq) != ESP_OK) {
+            ESP_LOGW(TAG, "Ack failed; retries next wake");
+        }
         clear_sync_error();
         result = ESP_OK;
         goto done;
