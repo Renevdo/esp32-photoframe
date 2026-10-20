@@ -134,12 +134,29 @@ test("images without a thumbnail are backed up but reported on restore", async (
   const target = await fakeDevice({}, {});
   devices.push(source, target);
 
-  await backupDevice(source.host, dir, quiet);
+  const { unrestorable } = await backupDevice(source.host, dir, quiet);
+  expect(unrestorable).toEqual(["Default/lonely.png (no thumbnail)"]);
   expect(fs.existsSync(path.join(dir, "albums", "Default", "lonely.png"))).toBe(
     true,
   );
   const { failed } = await restoreDevice(target.host, dir, quiet);
   expect(failed).toEqual(["Default/lonely.png"]);
+});
+
+test("BMP images are saved byte for byte but flagged as unrestorable", async () => {
+  const bmp = Buffer.from("BM-raw-bytes");
+  const source = await fakeDevice(
+    { "Default/old.bmp": bmp, "Default/old.jpg": Buffer.from("t") },
+    { Default: true },
+  );
+  devices.push(source);
+  const { unrestorable } = await backupDevice(source.host, dir, quiet);
+  expect(unrestorable).toEqual([
+    "Default/old.bmp (upload takes only .epdgz/.png)",
+  ]);
+  expect(
+    fs.readFileSync(path.join(dir, "albums", "Default", "old.bmp")),
+  ).toEqual(bmp);
 });
 
 test("backup refuses album names that would escape the backup directory", async () => {

@@ -1,5 +1,6 @@
 #include "sync_client.h"
 
+#include <dirent.h>
 #include <errno.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -14,6 +15,7 @@
 #include "esp_http_client.h"
 #include "esp_log.h"
 #include "esp_timer.h"
+#include "nvs.h"
 #include "sync_ops.h"
 #include "utils.h"
 
@@ -23,6 +25,9 @@ static const char *TAG = "sync_client";
 // from seq 0 and receives a full snapshot.
 #define SYNC_SEQ_PATH FS_MOUNT_POINT "/.sync_seq"
 #define SYNC_SEQ_TMP_PATH FS_MOUNT_POINT "/.sync_seq.tmp"
+// Where firmware before .sync_seq kept the cursor.
+#define LEGACY_NVS_NAMESPACE "sync"
+#define LEGACY_NVS_SEQ_KEY "last_seq"
 #define SYNC_CHANGES_MAX_LEN (32 * 1024)
 #define SYNC_HTTP_TIMEOUT_MS 15000
 
@@ -49,35 +54,99 @@ static void clear_sync_error(void)
     }
 }
 
-static int64_t load_last_seq(void)
-{
-    long long seq = 0;
-    FILE *f = fopen(SYNC_SEQ_PATH, "r");
-    if (f) {
-        if (fscanf(f, "%lld", &seq) != 1 || seq < 0) {
-            seq = 0;
-        }
-        fclose(f);
-    }
-    return (int64_t) seq;
-}
-
-static void store_last_seq(int64_t seq)
+static bool store_last_seq(int64_t seq)
 {
     FILE *f = fopen(SYNC_SEQ_TMP_PATH, "w");
     if (!f) {
         ESP_LOGW(TAG, "Cannot write %s: errno %d", SYNC_SEQ_TMP_PATH, errno);
-        return;
+        return false;
     }
     bool ok = fprintf(f, "%lld\n", (long long) seq) > 0;
     ok = (fclose(f) == 0) && ok;
-    // FAT will not rename over an existing file; losing the file in between
-    // only costs a full resync.
-    unlink(SYNC_SEQ_PATH);
-    if (!ok || rename(SYNC_SEQ_TMP_PATH, SYNC_SEQ_PATH) != 0) {
+    // LittleFS renames over the old file atomically; FAT refuses, so it falls
+    // back to unlink + rename.
+    if (ok && rename(SYNC_SEQ_TMP_PATH, SYNC_SEQ_PATH) != 0) {
+        unlink(SYNC_SEQ_PATH);
+        ok = rename(SYNC_SEQ_TMP_PATH, SYNC_SEQ_PATH) == 0;
+    }
+    if (!ok) {
         ESP_LOGW(TAG, "Cannot store sync seq %lld", (long long) seq);
         unlink(SYNC_SEQ_TMP_PATH);
     }
+    return ok;
+}
+
+// True when any album directory holds a file, i.e. the store survived since
+// the last sync rather than being formatted.
+static bool storage_has_album_files(void)
+{
+    DIR *root = opendir(IMAGE_DIRECTORY);
+    if (!root) {
+        return false;
+    }
+    bool found = false;
+    struct dirent *album;
+    while (!found && (album = readdir(root)) != NULL) {
+        if (album->d_name[0] == '.') {
+            continue;
+        }
+        char path[300];
+        snprintf(path, sizeof(path), "%s/%s", IMAGE_DIRECTORY, album->d_name);
+        DIR *dir = opendir(path);
+        if (!dir) {
+            continue;
+        }
+        struct dirent *entry;
+        while ((entry = readdir(dir)) != NULL) {
+            if (entry->d_name[0] != '.') {
+                found = true;
+                break;
+            }
+        }
+        closedir(dir);
+    }
+    closedir(root);
+    return found;
+}
+
+// Moves a pre-.sync_seq NVS cursor onto the storage, but only when that
+// storage still holds photos: on a wiped store it would hide the snapshot,
+// while on a kept one starting from 0 would drop pending deletes.
+static int64_t migrate_legacy_seq(void)
+{
+    nvs_handle_t handle;
+    if (nvs_open(LEGACY_NVS_NAMESPACE, NVS_READWRITE, &handle) != ESP_OK) {
+        return 0;
+    }
+    int64_t seq = 0;
+    if (nvs_get_i64(handle, LEGACY_NVS_SEQ_KEY, &seq) != ESP_OK || seq < 0) {
+        nvs_close(handle);
+        return 0;
+    }
+    if (seq > 0 && !storage_has_album_files()) {
+        ESP_LOGI(TAG, "Storage is empty, ignoring legacy sync seq %lld", (long long) seq);
+        seq = 0;
+    }
+    if (seq == 0 || store_last_seq(seq)) {
+        nvs_erase_key(handle, LEGACY_NVS_SEQ_KEY);
+        nvs_commit(handle);
+    }
+    nvs_close(handle);
+    return seq;
+}
+
+static int64_t load_last_seq(void)
+{
+    FILE *f = fopen(SYNC_SEQ_PATH, "r");
+    if (!f) {
+        return migrate_legacy_seq();
+    }
+    long long seq = 0;
+    if (fscanf(f, "%lld", &seq) != 1 || seq < 0) {
+        seq = 0;
+    }
+    fclose(f);
+    return (int64_t) seq;
 }
 
 // GET url into buf (NUL-terminated). Returns the HTTP status or -1 on error.

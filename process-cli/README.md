@@ -154,9 +154,11 @@ photoframe-process --restore ~/frame-backup --host photoframe.local
 ```
 
 Images and thumbnails round-trip byte for byte, and each album's enabled flag
-is restored. The settings land in `settings.json` in the web UI's export
-format; bring them back with **Maintenance > Config Backup > Import Config**. A device password (HTTP
-auth) is not supported here.
+is restored. Images `--restore` cannot upload (`.bmp`, or one without a
+thumbnail) are still saved, listed, and make `--backup` exit non-zero. The
+settings land in `settings.json` in the web UI's export format; bring them
+back with **Maintenance > Config Backup > Import Config**. A device password
+(HTTP auth) is not supported here.
 
 ## Options
 

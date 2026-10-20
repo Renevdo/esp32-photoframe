@@ -1025,7 +1025,12 @@ program
       const { backupDevice, restoreDevice } = await import("./backup.js");
       try {
         if (options.backup) {
-          await backupDevice(options.host, path.resolve(options.backup));
+          const { unrestorable } = await backupDevice(
+            options.host,
+            path.resolve(options.backup),
+          );
+          // Fail so a scripted backup-then-reflash stops before losing them.
+          if (unrestorable.length > 0) process.exit(1);
         } else {
           const { failed } = await restoreDevice(
             options.host,

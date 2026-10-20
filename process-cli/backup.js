@@ -53,6 +53,7 @@ export async function backupDevice(host, dir, log = console.log) {
 
   const albums = await getJson(base, "/api/albums");
   const manifest = { host, created: new Date().toISOString(), albums: [] };
+  const unrestorable = [];
   let fileCount = 0;
   let byteCount = 0;
 
@@ -68,10 +69,6 @@ export async function backupDevice(host, dir, log = console.log) {
 
     for (const image of images) {
       const filename = safeName(image.filename);
-      if (!RESTORABLE.has(path.extname(filename).toLowerCase())) {
-        log(`  Skipping ${albumName}/${filename}: upload cannot restore it`);
-        continue;
-      }
       const data = await getFile(base, `${albumName}/${filename}`);
       fs.writeFileSync(path.join(albumDir, filename), data);
       byteCount += data.length;
@@ -91,6 +88,13 @@ export async function backupDevice(host, dir, log = console.log) {
       }
       entry.images.push({ filename, thumbnail });
       log(`  ${albumName}/${filename} (${data.length} bytes)`);
+      if (!RESTORABLE.has(path.extname(filename).toLowerCase())) {
+        unrestorable.push(
+          `${albumName}/${filename} (upload takes only .epdgz/.png)`,
+        );
+      } else if (!thumbnail) {
+        unrestorable.push(`${albumName}/${filename} (no thumbnail)`);
+      }
     }
     manifest.albums.push(entry);
   }
@@ -99,7 +103,13 @@ export async function backupDevice(host, dir, log = console.log) {
   log(
     `Backed up ${fileCount} images in ${manifest.albums.length} albums (${byteCount} bytes) to ${dir}`,
   );
-  return manifest;
+  if (unrestorable.length > 0) {
+    log(
+      `${unrestorable.length} images are saved but --restore cannot put them back:`,
+    );
+    unrestorable.forEach((item) => log(`  ${item}`));
+  }
+  return { manifest, unrestorable };
 }
 
 async function uploadImage(base, album, albumDir, image) {
@@ -147,10 +157,9 @@ export async function restoreDevice(host, dir, log = console.log) {
     }
 
     for (const image of album.images) {
-      if (!image.thumbnail) {
-        log(
-          `  Skipping ${albumName}/${image.filename}: upload needs a thumbnail`,
-        );
+      const ext = path.extname(image.filename).toLowerCase();
+      if (!RESTORABLE.has(ext) || !image.thumbnail) {
+        log(`  Skipping ${albumName}/${image.filename}: upload cannot take it`);
         failed.push(`${albumName}/${image.filename}`);
         continue;
       }
