@@ -143,16 +143,32 @@ to device format), and press **Deploy**. The device pulls the deployed changes
 on its next scheduled wake; set **Sync Server URL** in the device settings to
 `http://<your-ip>:8090`. See [docs/OFFLINE_ALBUM_SYNC.md](../docs/OFFLINE_ALBUM_SYNC.md).
 
+### Backup and Restore
+
+```bash
+# Download every album, image, thumbnail and the settings from the frame
+photoframe-process --backup ~/frame-backup --host photoframe.local
+
+# After a reflash that wiped storage: upload them back
+photoframe-process --restore ~/frame-backup --host photoframe.local
+```
+
+Images and thumbnails round-trip byte for byte, and each album's enabled flag
+is restored. The settings land in `settings.json` in the web UI's export
+format; bring them back with **Maintenance > Config Backup > Import Config**. A device password (HTTP
+auth) is not supported here.
+
 ## Options
 
 ```
-Usage: photoframe-process [options] <input>
+Usage: photoframe-process [options] [input]
 
 ESP32 PhotoFrame image processing CLI
 
 Arguments:
   input                           Input image file or directory with album
-                                  subdirectories
+                                  subdirectories (not needed for --staging,
+                                  --backup or --restore)
 
 Options:
   -V, --version                   output the version number
@@ -176,6 +192,19 @@ Options:
                                   (default: "8080")
   --serve-format <format>         Image format to serve: epdgz, png, jpg, or
                                   bmp (default: "epdgz")
+  --staging <dir>                 Start staging server for offline album
+                                  preparation (deploy-on-wake sync)
+  --staging-port <port>           Port for staging server (default: "8090")
+  --backup <dir>                  Download every album, image, thumbnail and
+                                  the settings from the device (requires
+                                  --host)
+  --restore <dir>                 Upload a --backup directory back to the
+                                  device (requires --host)
+  --staging-name <name>           Instance name the companion app sees via mDNS
+                                  (default: "PhotoFrame Staging")
+  --no-staging-mdns               Do not advertise the staging server via mDNS
+  --no-staging-auto-deploy        Require an explicit Deploy instead of
+                                  deploying on every app edit
   --host <host>                   Device hostname or IP address (default:
                                   photoframe.local) (default:
                                   "photoframe.local")
