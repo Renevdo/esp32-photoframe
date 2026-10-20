@@ -15,6 +15,7 @@ set(SOURCES
     "jpeg_header.c"
     "main.c"
     "mdns_service.c"
+    "multipart.c"
     "network_backoff.c"
     "periodic_tasks.c"
     "png_decoder.c"

@@ -163,6 +163,24 @@ target_include_directories(
   ${CMAKE_CURRENT_SOURCE_DIR}/../main
 )
 
+# Multipart upload body scanner (/api/upload, /api/display-image)
+add_executable(
+  multipart_test
+  test_multipart.cpp
+  ../main/multipart.c
+)
+
+target_link_libraries(
+  multipart_test
+  GTest::gtest_main
+)
+
+target_include_directories(
+  multipart_test
+  PRIVATE
+  ${CMAKE_CURRENT_SOURCE_DIR}/../main
+)
+
 # Sync ops parser tests (deploy-on-wake album sync)
 add_executable(
   sync_ops_test
@@ -193,6 +211,7 @@ gtest_discover_tests(network_backoff_test)
 gtest_discover_tests(crash_record_test)
 gtest_discover_tests(wifi_retry_test)
 gtest_discover_tests(jpeg_header_test)
+gtest_discover_tests(multipart_test)
 
 # On-device image pipeline characterization tests (host build of
 # main/image_processor.c against ESP-IDF stubs + system libpng)
