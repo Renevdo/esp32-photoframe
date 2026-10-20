@@ -51,7 +51,9 @@ button presses on the device, no need to catch it awake.
 ## Details
 
 - **Sequence and ack**: every Deploy creates sequence N. The device stores
-  the last acknowledged sequence in NVS and asks for `changes?since=N`. Ops
+  the last acknowledged sequence in `/.sync_seq` on its photo storage and asks
+  for `changes?since=N`. A formatted or replaced store starts again at 0 and
+  receives the full deployed snapshot. Ops
   (put/delete/rmdir) are coalesced server-side, so a photo added and removed
   between two syncs costs nothing.
 - **Budget and resume**: the device spends at most 120 seconds per wake

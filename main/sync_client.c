@@ -14,14 +14,15 @@
 #include "esp_http_client.h"
 #include "esp_log.h"
 #include "esp_timer.h"
-#include "nvs.h"
 #include "sync_ops.h"
 #include "utils.h"
 
 static const char *TAG = "sync_client";
 
-#define SYNC_NVS_NAMESPACE "sync"
-#define SYNC_NVS_SEQ_KEY "last_seq"
+// Kept on the storage it describes, so a wiped or swapped store starts again
+// from seq 0 and receives a full snapshot.
+#define SYNC_SEQ_PATH FS_MOUNT_POINT "/.sync_seq"
+#define SYNC_SEQ_TMP_PATH FS_MOUNT_POINT "/.sync_seq.tmp"
 #define SYNC_CHANGES_MAX_LEN (32 * 1024)
 #define SYNC_HTTP_TIMEOUT_MS 15000
 
@@ -50,22 +51,32 @@ static void clear_sync_error(void)
 
 static int64_t load_last_seq(void)
 {
-    nvs_handle_t handle;
-    int64_t seq = 0;
-    if (nvs_open(SYNC_NVS_NAMESPACE, NVS_READONLY, &handle) == ESP_OK) {
-        nvs_get_i64(handle, SYNC_NVS_SEQ_KEY, &seq);
-        nvs_close(handle);
+    long long seq = 0;
+    FILE *f = fopen(SYNC_SEQ_PATH, "r");
+    if (f) {
+        if (fscanf(f, "%lld", &seq) != 1 || seq < 0) {
+            seq = 0;
+        }
+        fclose(f);
     }
-    return seq;
+    return (int64_t) seq;
 }
 
 static void store_last_seq(int64_t seq)
 {
-    nvs_handle_t handle;
-    if (nvs_open(SYNC_NVS_NAMESPACE, NVS_READWRITE, &handle) == ESP_OK) {
-        nvs_set_i64(handle, SYNC_NVS_SEQ_KEY, seq);
-        nvs_commit(handle);
-        nvs_close(handle);
+    FILE *f = fopen(SYNC_SEQ_TMP_PATH, "w");
+    if (!f) {
+        ESP_LOGW(TAG, "Cannot write %s: errno %d", SYNC_SEQ_TMP_PATH, errno);
+        return;
+    }
+    bool ok = fprintf(f, "%lld\n", (long long) seq) > 0;
+    ok = (fclose(f) == 0) && ok;
+    // FAT will not rename over an existing file; losing the file in between
+    // only costs a full resync.
+    unlink(SYNC_SEQ_PATH);
+    if (!ok || rename(SYNC_SEQ_TMP_PATH, SYNC_SEQ_PATH) != 0) {
+        ESP_LOGW(TAG, "Cannot store sync seq %lld", (long long) seq);
+        unlink(SYNC_SEQ_TMP_PATH);
     }
 }
 
