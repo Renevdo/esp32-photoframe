@@ -453,13 +453,18 @@ esp_err_t sync_client_run(void)
         }
     }
 
+    // The ack lets the server prune its journal, so it waits until the cursor
+    // is safely on storage; an unstored cursor replays these ops next wake.
+    if (!store_last_seq(changes->latest_seq)) {
+        utils_set_last_fetch_error("Album sync could not save its progress, retries next wake");
+        goto done;
+    }
     if (post_ack(base_url, changes->latest_seq) == ESP_OK) {
-        store_last_seq(changes->latest_seq);
         ESP_LOGI(TAG, "Sync complete at seq %lld", (long long) changes->latest_seq);
         clear_sync_error();
         result = ESP_OK;
     } else {
-        ESP_LOGW(TAG, "Ack failed; ops applied, will re-verify next wake");
+        ESP_LOGW(TAG, "Ack failed; the server keeps its journal until the next ack");
     }
 
 done:

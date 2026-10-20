@@ -143,8 +143,17 @@ export async function restoreDevice(host, dir, log = console.log) {
   let restored = 0;
   const failed = [];
 
+  // Validate every name before the first upload, so a bad manifest changes nothing.
   for (const album of manifest.albums) {
-    const albumName = safeName(album.name);
+    safeName(album.name);
+    for (const image of album.images) {
+      safeName(image.filename);
+      if (image.thumbnail) safeName(image.thumbnail);
+    }
+  }
+
+  for (const album of manifest.albums) {
+    const albumName = album.name;
     const albumDir = path.join(dir, "albums", albumName);
     const res = await fetch(`${base}/api/albums`, {
       method: "POST",
@@ -186,6 +195,7 @@ export async function restoreDevice(host, dir, log = console.log) {
     );
     if (!enabledRes.ok) {
       log(`  Could not set ${albumName} enabled=${album.enabled}`);
+      failed.push(`${albumName} (enabled=${album.enabled})`);
     }
   }
 

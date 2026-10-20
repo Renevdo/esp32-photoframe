@@ -159,6 +159,27 @@ test("BMP images are saved byte for byte but flagged as unrestorable", async () 
   ).toEqual(bmp);
 });
 
+test("restore refuses manifest file names outside the backup directory", async () => {
+  const target = await fakeDevice({}, {});
+  devices.push(target);
+  fs.writeFileSync(
+    path.join(dir, "backup.json"),
+    JSON.stringify({
+      albums: [
+        {
+          name: "Default",
+          enabled: true,
+          images: [{ filename: "a.png", thumbnail: "../../secret" }],
+        },
+      ],
+    }),
+  );
+  await expect(restoreDevice(target.host, dir, quiet)).rejects.toThrow(
+    /unsafe name/,
+  );
+  expect(target.state.files).toEqual({});
+});
+
 test("backup refuses album names that would escape the backup directory", async () => {
   const source = await fakeDevice({}, { "..": true });
   devices.push(source);
