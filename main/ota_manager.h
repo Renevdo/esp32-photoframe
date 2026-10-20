@@ -4,6 +4,14 @@
 #include <stdbool.h>
 
 #include "esp_err.h"
+#include "sdkconfig.h"
+
+// Whether this build has OTA app slots and the GitHub release updater.
+#ifdef CONFIG_PHOTOFRAME_OTA
+#define OTA_SUPPORTED true
+#else
+#define OTA_SUPPORTED false
+#endif
 
 typedef enum {
     OTA_STATE_IDLE,

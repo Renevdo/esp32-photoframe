@@ -16,7 +16,6 @@ set(SOURCES
     "main.c"
     "mdns_service.c"
     "network_backoff.c"
-    "ota_manager.c"
     "periodic_tasks.c"
     "png_decoder.c"
     "power_manager.c"
@@ -32,6 +31,13 @@ set(SOURCES
     "wifi_provisioning.c"
     "wifi_retry_policy.c"
 )
+
+# Without OTA partitions the updater is replaced by stubs that refuse to run.
+if(CONFIG_PHOTOFRAME_OTA)
+    list(APPEND SOURCES "ota_manager.c")
+else()
+    list(APPEND SOURCES "ota_manager_disabled.c")
+endif()
 
 set(INCLUDE_DIRS ".")
 
